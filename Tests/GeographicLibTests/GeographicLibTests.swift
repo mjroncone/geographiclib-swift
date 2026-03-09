@@ -1,6 +1,6 @@
 import Testing
 
-import GeographicLib
+@testable import GeographicLib
 
 struct TestGeodesic {
 	let latitude1: Double
@@ -108,7 +108,7 @@ let TEST_GEODESICS = [
 ]
 
 func isEqual(_ lhs: Double, _ rhs: Double, precision: Double = 0.000001) -> Bool {
-	return abs(lhs - rhs) < precision
+	return abs(lhs - rhs) <= precision
 }
 
 @Suite("Geodesic Tests")
@@ -178,6 +178,7 @@ struct GeodesicTests {
 			longitude: testCase.longitude1,
 			azimuth: testCase.azimuth1,
 			distance: testCase.distance,
+			flags: [.longitudeUnroll]
 		)
 
 		#expect(isEqual(result.latitude, testCase.latitude2, precision: 1e-13))
@@ -186,34 +187,27 @@ struct GeodesicTests {
 	}
 
 
-	// TODO: arc direct
-//	static int testarcdirect(void) {
-//		double lat1, lon1, azi1, lat2, lon2, azi2, s12, a12, m12, M12, M21, S12;
-//		double lat2a, lon2a, azi2a, s12a, a12a, m12a, M12a, M21a, S12a;
-//		struct geod_geodesic g;
-//		int i, result = 0;
-//		unsigned flags = GEOD_ARCMODE | GEOD_LONG_UNROLL;
-//		geod_init(&g, wgs84_a, wgs84_f);
-//		for (i = 0; i < ncases; ++i) {
-//			lat1 = testcases[i][0]; lon1 = testcases[i][1]; azi1 = testcases[i][2];
-//			lat2 = testcases[i][3]; lon2 = testcases[i][4]; azi2 = testcases[i][5];
-//			s12 = testcases[i][6]; a12 = testcases[i][7]; m12 = testcases[i][8];
-//			M12 = testcases[i][9]; M21 = testcases[i][10]; S12 = testcases[i][11];
-//			a12a = geod_gendirect(&g, lat1, lon1, azi1, flags, a12, &lat2a, &lon2a,
-//								  &azi2a, &s12a, &m12a, &M12a, &M21a, &S12a);
-//			result += checkEquals(lat2, lat2a, 1e-13);
-//			result += checkEquals(lon2, lon2a, 1e-13);
-//			result += checkEquals(azi2, azi2a, 1e-13);
-//			result += checkEquals(s12, s12a, 1e-8);
-//			result += checkEquals(a12, a12a, 0);
-//			result += checkEquals(s12, s12a, 1e-8);
-//			result += checkEquals(m12, m12a, 1e-8);
-//			result += checkEquals(M12, M12a, 1e-15);
-//			result += checkEquals(M21, M21a, 1e-15);
-//			result += checkEquals(S12, S12a, 0.1);
-//		}
-//		return result;
-//	}
+	@Test("Arc Direct mode", arguments: TEST_GEODESICS)
+	func testarcdirect(_ testCase: TestGeodesic) {
+		let flags: Set<Flag> = [.arcMode, .longitudeUnroll]
+		let geod = Geodesic.WGS84
+		let result = geod.generalDirect(
+			latitude: testCase.latitude1,
+			longitude: testCase.longitude1,
+			azimuth: testCase.azimuth1,
+			distance: testCase.arcLength,
+			flags: flags
+		)
+		#expect(isEqual(result.latitude, testCase.latitude2, precision: 1e-13))
+		#expect(isEqual(result.longitude, testCase.longitude2, precision: 1e-13))
+		#expect(isEqual(result.azimuth, testCase.azimuth2, precision: 1e-13))
+		#expect(isEqual(result.distance, testCase.distance, precision: 1e-8))
+		#expect(result.arcLength == testCase.arcLength)
+		#expect(isEqual(result.m12, testCase.m12, precision: 1e-8))
+		#expect(isEqual(result.M12, testCase.M12, precision: 1e-15))
+		#expect(isEqual(result.M21, testCase.M21, precision: 1e-15))
+		#expect(isEqual(result.areaUnder, testCase.areaUnder, precision: 0.1))
+	}
 
 	@Test
 	func testGeodSolve0() {
@@ -234,23 +228,20 @@ struct GeodesicTests {
 		#expect(isEqual(result.azimuth, 111.62947, precision: 0.5e-5))
 	}
 
-	// TODO: non-wgs84 ellipsoid
-//	static int GeodSolve2(void) {
-//		/* Check fix for antipodal prolate bug found 2010-09-04 */
-//		double azi1, azi2, s12)
-//		struct geod_geodesic g)
-//		int result = 0)
-//		geod_init(&g, 6.4e6, -1/150.0))
-//		geod.inverse( 0.07476, 0, -0.07476, 180, &s12, &azi1, &azi2))
-//		#expect(isEqual(result.azi1, 90.00078, 0.5e-5))
-//		#expect(isEqual(result.azi2, 90.00078, 0.5e-5))
-//		#expect(isEqual(result.s12, 20106193, 0.5))
-//		geod.inverse( 0.1, 0, -0.1, 180, &s12, &azi1, &azi2))
-//		#expect(isEqual(result.azi1, 90.00105, 0.5e-5))
-//		#expect(isEqual(result.azi2, 90.00105, 0.5e-5))
-//		#expect(isEqual(result.s12, 20106193, 0.5))
-//		return result)
-//	}
+	@Test
+	func testGeodSolve2() {
+		/* Check fix for antipodal prolate bug found 2010-09-04 */
+		let geod = Geodesic(equatorialRadius: 6.4e6, flattening: -1/150.0)
+		var result = geod.inverse(latitude1: 0.07476, longitude1: 0, latitude2: -0.07476, longitude2: 180)
+		#expect(isEqual(result.azimuth1, 90.00078, precision: 0.5e-5))
+		#expect(isEqual(result.azimuth2, 90.00078, precision: 0.5e-5))
+		#expect(isEqual(result.distance, 20106193, precision: 0.5))
+
+		result = geod.inverse(latitude1: 0.1, longitude1: 0, latitude2: -0.1, longitude2: 180)
+		#expect(isEqual(result.azimuth1, 90.00105, precision: 0.5e-5))
+		#expect(isEqual(result.azimuth2, 90.00105, precision: 0.5e-5))
+		#expect(isEqual(result.distance, 20106193, precision: 0.5))
+	}
 
 	@Test
 	func testGeodSolve4() {
@@ -270,8 +261,8 @@ struct GeodesicTests {
 		/* Check fix for point2=pole bug found 2010-05-03 */
 		let geod = Geodesic.WGS84
 		let result = geod.direct(latitude: 0.01777745589997, longitude: 30, azimuth: 0, distance: 10e6)
-		#expect(isEqual(result.latitude, 90, precision: 0.5e-5))
 
+		#expect(isEqual(result.latitude, 90, precision: 0.5e-5))
 		if (result.longitude < 0) {
 			#expect(isEqual(result.longitude, -150, precision: 0.5e-5))
 			#expect(isEqual(abs(result.azimuth), 180, precision: 0.5e-5))
@@ -279,7 +270,6 @@ struct GeodesicTests {
 			// I'm getting longitude 210, which is impossible, because it should be capped at 180.
 			// Since 30 is the difference between those two numbers, I'm assuming there's a clamp
 			// that's not working as expected somewhere.
-			// TODO: capabilities. I think this is failing because long_unroll should not be set here.
 			#expect(isEqual(result.longitude, 30, precision: 0.5e-5))
 			#expect(isEqual(result.azimuth, 0, precision: 0.5e-5))
 		}
@@ -354,107 +344,80 @@ struct GeodesicTests {
 		#expect(isEqual(result.distance, 19989144.774, precision: 0.5e-3))
 	}
 
-	// TODO: non-WGS84 ellipsoid
-//	func testGeodSolve12() {
-//		/* Check fix for inverse geodesics on extreme prolate/oblate
-//		 * ellipsoids Reported 2012-08-29 Stefan Guenther
-//		 * <stefan.gunther@embl.de>) fixed 2012-10-07 */
-//		double azi1, azi2, s12)
-//		struct geod_geodesic g)
-//		int result = 0)
-//		geod_init(&g, 89.8, -1.83))
-//		geod.inverse( 0, 0, -10, 160, &s12, &azi1, &azi2))
-//		#expect(isEqual(result.azi1, 120.27, 1e-2))
-//		#expect(isEqual(result.azi2, 105.15, 1e-2))
-//		#expect(isEqual(result.s12, 266.7, 1e-1))
-//		return result)
-//	}
+	@Test
+	func testGeodSolve12() {
+		/* Check fix for inverse geodesics on extreme prolate/oblate
+		 * ellipsoids Reported 2012-08-29 Stefan Guenther
+		 * <stefan.gunther@embl.de>) fixed 2012-10-07 */
+		let geod = Geodesic(equatorialRadius: 89.8, flattening: -1.83)
+		let result = geod.inverse(latitude1: 0, longitude1: 0, latitude2: -10, longitude2: 160)
+		#expect(isEqual(result.azimuth1, 120.27, precision: 1e-2))
+		#expect(isEqual(result.azimuth2, 105.15, precision: 1e-2))
+		#expect(isEqual(result.distance, 266.7, precision: 1e-1))
+	}
 
-// TODO: NaN should be impossible?
-//	static int GeodSolve14(void) {
-//		/* Check fix for inverse ignoring lon12 = nan */
-//		double azi1, azi2, s12)
-//		struct geod_geodesic g)
-//		int result = 0)
-//		geod_init(&g, wgs84_a, wgs84_f))
-//		geod.inverse( 0, 0, 1, nan("0"), &s12, &azi1, &azi2))
-//		result += checkNaN(azi1))
-//		result += checkNaN(azi2))
-//		result += checkNaN(s12))
-//		return result)
-//	}
+	@Test()
+	func testGeodSolve14() {
+		/* Check fix for inverse ignoring lon12 = nan */
+		let geod = Geodesic.WGS84
+		let result = geod.inverse(latitude1: 0, longitude1: 0, latitude2: 1, longitude2: .nan)
+		#expect(result.azimuth1.isNaN)
+		#expect(result.azimuth2.isNaN)
+		#expect(result.distance.isNaN)
+	}
 
-	// TODO: non-WGS84 ellipsoid
-//	static int GeodSolve15(void) {
-//		/* Initial implementation of Math::eatanhe was wrong for e^2 < 0.  This
-//		 * checks that this is fixed. */
-//		double S12)
-//		struct geod_geodesic g)
-//		int result = 0)
-//		geod_init(&g, 6.4e6, -1/150.0))
-//		geod_gendirect(&g, 1, 2, 3, 0, 4, nullptr, nullptr, nullptr,
-//					   nullptr, nullptr, nullptr, nullptr, &S12))
-//		#expect(isEqual(result.S12, 23700, 0.5))
-//		return result)
-//	}
+	@Test
+	func testGeodSolve15() {
+		/* Initial implementation of Math::eatanhe was wrong for e^2 < 0.  This
+		 * checks that this is fixed. */
+		let geod = Geodesic(equatorialRadius: 6.4e6, flattening: -1/150.0)
+		let result = geod.generalDirect(latitude: 1, longitude: 2, azimuth: 3, distance: 4)
+		#expect(isEqual(result.areaUnder, 23700, precision: 0.5))
+	}
 
-	// TODO: LONG_UNROLL implementation
-//	static int GeodSolve17(void) {
-//		/* Check fix for LONG_UNROLL bug found on 2015-05-07 */
-//		double lat2, lon2, azi2)
-//		struct geod_geodesic g)
-//		struct geod_geodesicline l)
-//		int result = 0)
-//		unsigned flags = GEOD_LONG_UNROLL)
-//		geod_init(&g, wgs84_a, wgs84_f))
-//		geod_gendirect(&g, 40, -75, -10, flags, 2e7, &lat2, &lon2, &azi2,
-//					   nullptr, nullptr, nullptr, nullptr, nullptr))
-//		#expect(isEqual(result.lat2, -39, 1))
-//		#expect(isEqual(result.lon2, -254, 1))
-//		#expect(isEqual(result.azi2, -170, 1))
-//		geod_lineinit(&l, &g, 40, -75, -10, 0))
-//		geod_genposition(&l, flags, 2e7, &lat2, &lon2, &azi2,
-//						 nullptr, nullptr, nullptr, nullptr, nullptr))
-//		#expect(isEqual(result.lat2, -39, 1))
-//		#expect(isEqual(result.lon2, -254, 1))
-//		#expect(isEqual(result.azi2, -170, 1))
-//		geod_direct(&g, 40, -75, -10, 2e7, &lat2, &lon2, &azi2))
-//		#expect(isEqual(result.lat2, -39, 1))
-//		#expect(isEqual(result.lon2, 105, 1))
-//		#expect(isEqual(result.azi2, -170, 1))
-//		geod_position(&l, 2e7, &lat2, &lon2, &azi2))
-//		#expect(isEqual(result.lat2, -39, 1))
-//		#expect(isEqual(result.lon2, 105, 1))
-//		#expect(isEqual(result.azi2, -170, 1))
-//		return result)
-//	}
+	@Test
+	func testGeodSolve17() {
+		/* Check fix for LONG_UNROLL bug found on 2015-05-07 */
+		let geod = Geodesic.WGS84
+		let flags = Set<Flag>([.longitudeUnroll])
+		let result = geod.generalDirect(
+			latitude: 40,
+			longitude: -75,
+			azimuth: -10,
+			distance: 2e7,
+			flags: flags
+		)
+		#expect(isEqual(result.latitude, -39, precision: 1))
+		#expect(isEqual(result.longitude, -254, precision: 1))
+		#expect(isEqual(result.azimuth, -170, precision: 1))
 
-// TODO: non-WGS84 Ellipsoid
-//	static int GeodSolve26(void) {
-//		/* Check 0/0 problem with area calculation on sphere 2015-09-08 */
-//		double S12)
-//		struct geod_geodesic g)
-//		int result = 0)
-//		geod_init(&g, 6.4e6, 0))
-//		var result = geod.generalInverse( 1, 2, 3, 4, nullptr, nullptr, nullptr,
-//						nullptr, nullptr, nullptr, &S12))
-//		#expect(isEqual(result.S12, 49911046115.0, 0.5))
-//		return result)
-//	}
+		let result2 = geod.direct(
+			latitude: 40,
+			longitude: -75,
+			azimuth: -10,
+			distance: 2e7
+		)
+		#expect(isEqual(result2.latitude, -39, precision: 1))
+		#expect(isEqual(result2.longitude, 105, precision: 1))
+		#expect(isEqual(result2.azimuth, -170, precision: 1))
+	}
 
-// TODO: non-WGS84 Ellipsoid
-//	static int GeodSolve28(void) {
-//		/* Check for bad placement of assignment of r.a12 with |f| > 0.01 (bug in
-//		 * Java implementation fixed on 2015-05-19). */
-//		double a12)
-//		struct geod_geodesic g)
-//		int result = 0)
-//		geod_init(&g, 6.4e6, 0.1))
-//		a12 = geod_gendirect(&g, 1, 2, 10, 0, 5e6, nullptr, nullptr, nullptr,
-//							 nullptr, nullptr, nullptr, nullptr, nullptr))
-//		#expect(isEqual(result.a12, 48.55570690, 0.5e-8))
-//		return result)
-//	}
+	@Test
+	func testGeodSolve26() {
+		/* Check 0/0 problem with area calculation on sphere 2015-09-08 */
+		let geod = Geodesic(equatorialRadius: 6.4e6, flattening: 0)
+		let result = geod.generalInverse(latitude1: 1, longitude1: 2, latitude2: 3, longitude2: 4)
+		#expect(isEqual(result.areaUnder, 49911046115.0, precision: 0.5))
+	}
+
+	@Test
+	func testGeodSolve28() {
+		/* Check for bad placement of assignment of r.a12 with |f| > 0.01 (bug in
+		 * Java implementation fixed on 2015-05-19). */
+		let geod = Geodesic(equatorialRadius: 6.4e6, flattening: 0.1)
+		let result = geod.generalDirect(latitude: 1, longitude: 2, azimuth: 10, distance: 5e6, flags: [])
+		#expect(isEqual(result.arcLength, 48.55570690, precision: 0.5e-8))
+	}
 
 	@Test
 	func testGeodSolve33() {
@@ -462,10 +425,9 @@ struct GeodesicTests {
 		 * sind(-0.0) = +0.0 -- and in some version of Visual Studio --
 		 * fmod(-0.0, 360.0) = +0.0. */
 		let geod = Geodesic.WGS84
-		var result = geod.inverse(latitude1: 0, longitude1: 0, latitude2: 0, longitude2: 179)
+		var result = geod.inverse(latitude1: 0, longitude1: 0, latitude2: 0, longitude2: 179, capabilities: [.distance, .azimuth])
 		#expect(isEqual(result.azimuth1, 90.00000, precision: 0.5e-5))
 		#expect(isEqual(result.azimuth2, 90.00000, precision: 0.5e-5))
-		// Why am I getting 0 for the distance here?
 		#expect(isEqual(result.distance, 19926189, precision: 0.5))
 
 		result = geod.inverse(latitude1: 0, longitude1: 0, latitude2: 0, longitude2: 179.5)
@@ -483,56 +445,82 @@ struct GeodesicTests {
 		#expect(isEqual(abs(result.azimuth2), 180.00000, precision: 0.5e-5))
 		#expect(isEqual(result.distance, 19893357, precision: 0.5))
 
-// TODO: non-WGS84 Ellipsoid
-//		geod_init(&g, 6.4e6, 0))
-//		result = geod.inverse( 0, 0, 0, 179, &s12, &azi1, &azi2))
-//		#expect(isEqual(result.azi1, 90.00000, 0.5e-5))
-//		#expect(isEqual(result.azi2, 90.00000, 0.5e-5))
-//		#expect(isEqual(result.s12, 19994492, 0.5))
-//		geod.inverse( 0, 0, 0, 180, &s12, &azi1, &azi2))
-//		#expect(isEqual(result.azi1, 0.00000, 0.5e-5))
-//		#expect(isEqual(result.fabs(azi2), 180.00000, 0.5e-5))
-//		#expect(isEqual(result.s12, 20106193, 0.5))
-//		geod.inverse( 0, 0, 1, 180, &s12, &azi1, &azi2))
-//		#expect(isEqual(result.azi1, 0.00000, 0.5e-5))
-//		#expect(isEqual(result.fabs(azi2), 180.00000, 0.5e-5))
-//		#expect(isEqual(result.s12, 19994492, 0.5))
+		let geod2 = Geodesic(equatorialRadius: 6.4e6, flattening: 0)
+		let result2 = geod2.inverse(
+			latitude1: 0,
+			longitude1: 0,
+			latitude2: 0,
+			longitude2: 179,
+		)
+		#expect(isEqual(result2.azimuth1, 90.00000, precision: 0.5e-5))
+		#expect(isEqual(result2.azimuth2, 90.00000, precision: 0.5e-5))
+		#expect(isEqual(result2.distance, 19994492, precision: 0.5))
 
-// TODO: non-WGS84 Ellipsoid
-//		geod_init(&g, 6.4e6, -1/300.0))
-//		geod.inverse( 0, 0, 0, 179, &s12, &azi1, &azi2))
-//		#expect(isEqual(result.azi1, 90.00000, 0.5e-5))
-//		#expect(isEqual(result.azi2, 90.00000, 0.5e-5))
-//		#expect(isEqual(result.s12, 19994492, 0.5))
-//		geod.inverse( 0, 0, 0, 180, &s12, &azi1, &azi2))
-//		#expect(isEqual(result.azi1, 90.00000, 0.5e-5))
-//		#expect(isEqual(result.azi2, 90.00000, 0.5e-5))
-//		#expect(isEqual(result.s12, 20106193, 0.5))
-//		geod.inverse( 0, 0, 0.5, 180, &s12, &azi1, &azi2))
-//		#expect(isEqual(result.azi1, 33.02493, 0.5e-5))
-//		#expect(isEqual(result.azi2, 146.97364, 0.5e-5))
-//		#expect(isEqual(result.s12, 20082617, 0.5))
-//		geod.inverse( 0, 0, 1, 180, &s12, &azi1, &azi2))
-//		#expect(isEqual(result.azi1, 0.00000, 0.5e-5))
-//		#expect(isEqual(result.fabs(azi2), 180.00000, 0.5e-5))
-//		#expect(isEqual(result.s12, 20027270, 0.5))
+		let result3 = geod2.inverse(
+			latitude1: 0,
+			longitude1: 0,
+			latitude2: 0,
+			longitude2: 180
+		)
+		#expect(isEqual(result3.azimuth1, 0.00000, precision: 0.5e-5))
+		#expect(isEqual(abs(result3.azimuth2), 180.00000, precision: 0.5e-5))
+		#expect(isEqual(result3.distance, 20106193, precision: 0.5))
+
+		let result4 = geod2.inverse(
+			latitude1: 0,
+			longitude1: 0,
+			latitude2: 1,
+			longitude2: 180,
+		)
+		#expect(isEqual(result4.azimuth1, 0.00000, precision: 0.5e-5))
+		#expect(isEqual(abs(result4.azimuth2), 180.00000, precision: 0.5e-5))
+		#expect(isEqual(result4.distance, 19994492, precision: 0.5))
+
+		let geod3 = Geodesic(equatorialRadius: 6.4e6, flattening: -1/300.0)
+		let result5 = geod3.inverse(latitude1: 0, longitude1: 0, latitude2: 0, longitude2: 179)
+		#expect(isEqual(result5.azimuth1, 90.00000, precision: 0.5e-5))
+		#expect(isEqual(result5.azimuth2, 90.00000, precision: 0.5e-5))
+		#expect(isEqual(result5.distance, 19994492, precision: 0.5))
+		let result6 = geod3.inverse(latitude1: 0, longitude1: 0, latitude2: 0, longitude2: 180)
+		#expect(isEqual(result6.azimuth1, 90.00000, precision: 0.5e-5))
+		#expect(isEqual(result6.azimuth2, 90.00000, precision: 0.5e-5))
+		#expect(isEqual(result6.distance, 20106193, precision: 0.5))
+		let result7 = geod3.inverse(latitude1: 0, longitude1: 0, latitude2: 0.5, longitude2: 180)
+		#expect(isEqual(result7.azimuth1, 33.02493, precision: 0.5e-5))
+		#expect(isEqual(result7.azimuth2, 146.97364, precision: 0.5e-5))
+		#expect(isEqual(result7.distance, 20082617, precision: 0.5))
+		let result8 = geod3.inverse(latitude1: 0, longitude1: 0, latitude2: 1, longitude2: 180)
+		#expect(isEqual(result8.azimuth1, 0.00000, precision: 0.5e-5))
+		#expect(isEqual(abs(result8.azimuth2), 180.00000, precision: 0.5e-5))
+		#expect(isEqual(result8.distance, 20027270, precision: 0.5))
 	}
 
-	// TODO: NaN should be impossible?
-//	func testGeodSolve55() {
-//		/* Check fix for nan + point on equator or pole not returning all nans in
-//		 * Geodesic::Inverse, found 2015-09-23. */
-//		let geod = Geodesic.WGS84
-//		geod.inverse(nan("0"), 0, 0, 90, &s12, &azi1, &azi2);
-//		result += checkNaN(azi1);
-//		result += checkNaN(azi2);
-//		result += checkNaN(s12);
-//		geod.inverse(nan("0"), 0, 90, 9, &s12, &azi1, &azi2);
-//		result += checkNaN(azi1);
-//		result += checkNaN(azi2);
-//		result += checkNaN(s12);
-//		return result;
-//	}
+	@Test()
+	func testGeodSolve55() {
+		/* Check fix for nan + point on equator or pole not returning all nans in
+		 * Geodesic::Inverse, found 2015-09-23. */
+		let geod = Geodesic.WGS84
+		var result = geod.inverse(
+			latitude1: .nan,
+			longitude1: 0,
+			latitude2: 0,
+			longitude2: 90
+		)
+
+		#expect(result.azimuth1.isNaN)
+		#expect(result.azimuth2.isNaN)
+		#expect(result.distance.isNaN)
+
+		result = geod.inverse(
+			latitude1: .nan,
+			longitude1: 0,
+			latitude2: 90,
+			longitude2: 9
+		)
+		#expect(result.azimuth1.isNaN)
+		#expect(result.azimuth2.isNaN)
+		#expect(result.distance.isNaN)
+	}
 
 	@Test
 	func testGeodSolve59() {
@@ -549,105 +537,104 @@ struct GeodesicTests {
 		#expect(isEqual(result.distance, 18345191.174332713, precision: 5e-9))
 	}
 
-	// TODO: test implementation details?
-//	func testGeodSolve61() {
-//		/* Make sure small negative azimuths are west-going */
-//		double lat2, lon2, azi2;
-//		struct geod_geodesic g;
-//		struct geod_geodesicline l;
-//		int result = 0;
-//		unsigned flags = GEOD_LONG_UNROLL;
-//		geod_init(&g, wgs84_a, wgs84_f);
-//		geod_gendirect(&g, 45, 0, -0.000000000000000003, flags, 1e7,
-//					   &lat2, &lon2, &azi2,
-//					   nullptr, nullptr, nullptr, nullptr, nullptr);
-//		#expect(isEqual(result.lat2, 45.30632, 0.5e-5);
-//		#expect(isEqual(result.lon2, -180, 0.5e-5);
-//		#expect(isEqual(result.fabs(azi2), 180, 0.5e-5);
-//		geod_inverseline(&l, &g, 45, 0, 80, -0.000000000000000003, 0);
-//		geod_genposition(&l, flags, 1e7, &lat2, &lon2, &azi2,
-//						 nullptr, nullptr, nullptr, nullptr, nullptr);
-//		#expect(isEqual(result.lat2, 45.30632, 0.5e-5);
-//		#expect(isEqual(result.lon2, -180, 0.5e-5);
-//		#expect(isEqual(result.fabs(azi2), 180, 0.5e-5);
-//	}
+	@Test
+	func testGeodSolve61() {
+		/* Make sure small negative azimuths are west-going */
+		let flags = Set<Flag>([.longitudeUnroll])
+		let geod = Geodesic.WGS84
+		let result = geod.generalDirect(
+			latitude: 45,
+			longitude: 0,
+			azimuth: -0.000000000000000003,
+			distance: 1e7,
+			flags: flags
+		)
+		#expect(isEqual(result.latitude, 45.30632, precision: 0.5e-5))
+		#expect(isEqual(result.longitude, -180, precision: 0.5e-5))
+		#expect(isEqual(abs(result.azimuth), 180, precision: 0.5e-5))
+	}
 
-	// TODO: expose inverseline?
-//	static int GeodSolve65(void) {
-//		/* Check for bug in east-going check in GeodesicLine (needed to check for
-//		 * sign of 0) and sign error in area calculation due to a bogus override of
-//		 * the code for alp12.  Found/fixed on 2015-12-19. */
-//		double lat2, lon2, azi2, s12, a12, m12, M12, M21, S12;
-//		struct geod_geodesic g;
-//		struct geod_geodesicline l;
-//		int result = 0;
-//		unsigned flags = GEOD_LONG_UNROLL, caps = GEOD_ALL;
-//		geod_init(&g, wgs84_a, wgs84_f);
-//		geod_inverseline(&l, &g, 30, -0.000000000000000001, -31, 180, caps);
-//		a12 = geod_genposition(&l, flags, 1e7,
-//							   &lat2, &lon2, &azi2, &s12, &m12, &M12, &M21, &S12);
-//		#expect(isEqual(result.lat2, -60.23169, 0.5e-5);
-//		#expect(isEqual(result.lon2, -0.00000, 0.5e-5);
-//		#expect(isEqual(result.fabs(azi2), 180.00000, 0.5e-5);
-//		#expect(isEqual(result.s12, 10000000, 0.5);
-//		#expect(isEqual(result.a12, 90.06544, 0.5e-5);
-//		#expect(isEqual(result.m12, 6363636, 0.5);
-//		#expect(isEqual(result.M12, -0.0012834, 0.5e-7);
-//		#expect(isEqual(result.M21, 0.0013749, 0.5e-7);
-//		#expect(isEqual(result.S12, 0, 0.5);
-//		a12 = geod_genposition(&l, flags, 2e7,
-//							   &lat2, &lon2, &azi2, &s12, &m12, &M12, &M21, &S12);
-//		#expect(isEqual(result.lat2, -30.03547, 0.5e-5);
-//		#expect(isEqual(result.lon2, -180.00000, 0.5e-5);
-//		#expect(isEqual(result.azi2, -0.00000, 0.5e-5);
-//		#expect(isEqual(result.s12, 20000000, 0.5);
-//		#expect(isEqual(result.a12, 179.96459, 0.5e-5);
-//		#expect(isEqual(result.m12, 54342, 0.5);
-//		#expect(isEqual(result.M12, -1.0045592, 0.5e-7);
-//		#expect(isEqual(result.M21, -0.9954339, 0.5e-7);
-//		#expect(isEqual(result.S12, 127516405431022.0, 0.5);
-//		return result;
-//	}
+	@Test(.disabled("TODO: InverseLine not implemented"))
+	func testGeodSolve65() {
+		/* Check for bug in east-going check in GeodesicLine (needed to check for
+		 * sign of 0) and sign error in area calculation due to a bogus override of
+		 * the code for alp12.  Found/fixed on 2015-12-19. */
+		let flags: Set<Flag> = [.longitudeUnroll]
+		let caps: Set<Capability> = Set(Capability.allCases)
+		let geod = Geodesic.WGS84
 
-	// TODO: expose inverseline?
-//	static int GeodSolve67(void) {
-//		/* Check for InverseLine if line is slightly west of S and that s13 is
-//		 * correctly set. */
-//		double lat2, lon2, azi2;
-//		struct geod_geodesic g;
-//		struct geod_geodesicline l;
-//		int result = 0;
-//		unsigned flags = GEOD_LONG_UNROLL;
-//		geod_init(&g, wgs84_a, wgs84_f);
-//		geod_inverseline(&l, &g, -5, -0.000000000000002, -10, 180, 0);
-//		geod_genposition(&l, flags, 2e7, &lat2, &lon2, &azi2,
-//						 nullptr, nullptr, nullptr, nullptr, nullptr);
-//		#expect(isEqual(result.lat2, 4.96445, 0.5e-5);
-//		#expect(isEqual(result.lon2, -180.00000, 0.5e-5);
-//		#expect(isEqual(result.azi2, -0.00000, 0.5e-5);
-//		geod_genposition(&l, flags, 0.5 * l.s13, &lat2, &lon2, &azi2,
-//						 nullptr, nullptr, nullptr, nullptr, nullptr);
-//		#expect(isEqual(result.lat2, -87.52461, 0.5e-5);
-//		#expect(isEqual(result.lon2, -0.00000, 0.5e-5);
-//		#expect(isEqual(result.azi2, -180.00000, 0.5e-5);
-//		return result;
-//	}
+		let line = Line(geodesic: geod, latitude: 0, longitude: 0, azimuth: 0, capabilities: caps)
+//		let line = geod.inverseline(
+//			latitude1: 30,
+//			longitude1: -0.000000000000000001,
+//			latitude2: -31,
+//			longitude2: 180,
+//			capabilities: caps
+//		)
 
-	// TODO: expose DirectLine
-//	static int GeodSolve71(void) {
-//		/* Check that DirectLine sets s13. */
-//		double lat2, lon2, azi2;
-//		struct geod_geodesic g;
-//		struct geod_geodesicline l;
-//		int result = 0;
-//		geod_init(&g, wgs84_a, wgs84_f);
-//		geod_directline(&l, &g, 1, 2, 45, 1e7, 0);
-//		geod_position(&l, 0.5 * l.s13, &lat2, &lon2, &azi2);
-//		#expect(isEqual(result.lat2, 30.92625, 0.5e-5);
-//		#expect(isEqual(result.lon2, 37.54640, 0.5e-5);
-//		#expect(isEqual(result.azi2, 55.43104, 0.5e-5);
-//		return result;
-//	}
+		let result = geod.genposition(line: line, s12_a12: 1e7, flags: flags)
+		#expect(isEqual(result.latitude, -60.23169, precision: 0.5e-5))
+		#expect(isEqual(result.longitude, -0.00000, precision: 0.5e-5))
+		#expect(isEqual(abs(result.azimuth), 180.00000, precision: 0.5e-5))
+		#expect(isEqual(result.distance, 10000000, precision: 0.5))
+		#expect(isEqual(result.arcLength, 90.06544, precision: 0.5e-5))
+		#expect(isEqual(result.m12, 6363636, precision: 0.5))
+		#expect(isEqual(result.M12, -0.0012834, precision: 0.5e-7))
+		#expect(isEqual(result.M21, 0.0013749, precision: 0.5e-7))
+		#expect(isEqual(result.areaUnder, 0, precision: 0.5))
+
+		let result2 = geod.genposition(line: line, s12_a12: 2e7, flags: flags)
+		#expect(isEqual(result2.latitude, -30.03547, precision: 0.5e-5))
+		#expect(isEqual(result2.longitude, -180.00000, precision: 0.5e-5))
+		#expect(isEqual(result2.azimuth, -0.00000, precision: 0.5e-5))
+		#expect(isEqual(result2.distance, 20000000, precision: 0.5))
+		#expect(isEqual(result2.arcLength, 179.96459, precision: 0.5e-5))
+		#expect(isEqual(result2.m12, 54342, precision: 0.5))
+		#expect(isEqual(result2.M12, -1.0045592, precision: 0.5e-7))
+		#expect(isEqual(result2.M21, -0.9954339, precision: 0.5e-7))
+		#expect(isEqual(result2.areaUnder, 127516405431022.0, precision: 0.5))
+	}
+
+	@Test(.disabled("TODO: InverseLine not implemented"))
+	func testGeodSolve67() {
+		/* Check for InverseLine if line is slightly west of S and that s13 is
+		 * correctly set. */
+		let flags: Set<Flag> = [.longitudeUnroll]
+		let geod = Geodesic.WGS84
+
+		let line = Line(geodesic: geod, latitude: 0, longitude: 0, azimuth: 0, capabilities: [])
+//		let line = geod.inverseline(
+//			latitude1: -5,
+//			longitude1: -0.000000000000002,
+//			latitude2: -10,
+//			longitude2: 180,
+//			capabilities: []
+//		)
+
+		let result = geod.genposition(line: line, s12_a12: 2e7, flags: flags)
+		#expect(isEqual(result.latitude, 4.96445, precision: 0.5e-5))
+		#expect(isEqual(result.longitude, -180.00000, precision: 0.5e-5))
+		#expect(isEqual(result.azimuth, -0.00000, precision: 0.5e-5))
+
+		let result2 = geod.genposition(line: line, s12_a12: 0.5 * line.distance, flags: flags)
+		#expect(isEqual(result2.latitude, -87.52461, precision: 0.5e-5))
+		#expect(isEqual(result2.longitude, -0.00000, precision: 0.5e-5))
+		#expect(isEqual(result2.azimuth, -180.00000, precision: 0.5e-5))
+	}
+
+	@Test(.disabled("TODO: implement DirectLine"))
+	func testGeodSolve71() {
+		/* Check that DirectLine sets s13. */
+		let geod = Geodesic.WGS84
+
+		let line = Line(geodesic: geod, latitude: 1, longitude: 2, azimuth: 45, capabilities: [])
+//		let line = geod.directline(latitude1: 1, longitude1: 2, azimuth: 45, s12_a12: 1e7, flags: [])
+		let result = geod.genposition(line: line, s12_a12: 0.5 * line.distance, flags: [])
+
+		#expect(isEqual(result.latitude, 30.92625, precision: 0.5e-5))
+		#expect(isEqual(result.longitude, 37.54640, precision: 0.5e-5))
+		#expect(isEqual(result.azimuth, 55.43104, precision: 0.5e-5))
+	}
 
 	@Test
 	func testGeodSolve73() {
@@ -667,29 +654,15 @@ struct GeodesicTests {
 	}
 
 
-	// TODO: planimeter?
-//	@Test
-//	func testPlanimeter(const struct geod_geodesic* g,
-//						   double points[][2], int N,
-//						   double* perimeter, double* area) {
-//		struct geod_polygon p;
-//		int i;
-//		geod_polygon_init(&p, 0);
-//		for (i = 0; i < N; ++i)
-//				geod_polygon_addpoint(g, &p, points[i][0], points[i][1]);
-//		geod_polygon_compute(g, &p, 0, 1, area, perimeter);
-//	}
+	func planimeter(_ geod: Geodesic, points: [Point]) -> (area: Double, perimeter: Double) {
+		let polygon = Polygon(isPolyline: false, points: points, geodesic: geod)
+		return polygon.compute(geod: geod, reverse: false, sign: true)
+	}
 
-	// TODO: polylength?
-	// @Test
-//	func testPolylength() {
-//		struct geod_polygon p;
-//		int i;
-//		geod_polygon_init(&p, 1);
-//		for (i = 0; i < N; ++i)
-//				geod_polygon_addpoint(g, &p, points[i][0], points[i][1]);
-//		geod_polygon_compute(g, &p, 0, 1, nullptr, perimeter);
-//	}
+	func polylength(_ geod: Geodesic, points: [Point]) -> Double {
+		let polygon = Polygon(isPolyline: true, points: points, geodesic: geod)
+		return polygon.compute(geod: geod, reverse: false, sign: true).perimeter
+	}
 
 	@Test
 	func testGeodSolve74() {
@@ -762,7 +735,7 @@ struct GeodesicTests {
 			latitude1: 0,
 			longitude1: 0,
 			latitude2: 1e-6,
-			longitude2: 1e-6
+			longitude2: 1e-6,
 		)
 		#expect(isEqual(result.M12, 1, precision: 0.5e-10))
 		#expect(isEqual(result.M21, 1, precision: 0.5e-10))
@@ -781,10 +754,9 @@ struct GeodesicTests {
 		#expect(isEqual(result.M12, 1, precision: 1e-15))
 		#expect(isEqual(result.M21, 1, precision: 1e-15))
 		#expect(isEqual(result.areaUnder, 0, precision: 1e-10))
-		// TODO: 0 or 1 is a success?
-//		result += 1/a12 > 0 ? 0 : 1;
-//		result += 1/s12 > 0 ? 0 : 1;
-//		result += 1/m12 > 0 ? 0 : 1;
+		#expect(1/result.arcLength > 0)
+		#expect(1/result.distance > 0)
+		#expect(1/result.m12 > 0)
 
 		result = geod.generalInverse(
 			latitude1: 90,
@@ -801,60 +773,63 @@ struct GeodesicTests {
 		#expect(isEqual(result.M21, 1, precision: 1e-15))
 		#expect(isEqual(result.areaUnder, 127516405431022.0, precision: 0.5))
 
-		// TODO: NaN?
 		/* An incapable line which can't take distance as input */
-//		geod_lineinit(&l, &g, 1, 2, 90, GEOD_LATITUDE);
-//		a12 = geod_genposition(&l, 0, 1000, nullptr, nullptr, nullptr,
-//							   nullptr, nullptr, nullptr, nullptr, nullptr);
-//		result += checkNaN(a12);
-//		return result;
+		let line = Line(geodesic: geod, latitude: 1, longitude: 2, azimuth: 90, capabilities: [.latitude])
+		let result2 = geod.genposition(line: line, s12_a12: 1000, flags: [])
+		#expect(result2.arcLength.isNaN)
 	}
 
-//	@Test
-//	func testGeodSolve84() {
+	@Test
+	func testGeodSolve84() {
 		/* Tests for python implementation to check fix for range errors with
 		 * {fmod,sin,cos}(inf) (includes GeodSolve84 - GeodSolve86). */
 
-//		let geod = Geodesic.WGS84
-// TODO: inifinty and NaN?
-//		geod_direct(&g, 0, 0, 90, .infinity, &lat2, &lon2, &azi2);
-//		result += checkNaN(lat2);
-//		result += checkNaN(lon2);
-//		result += checkNaN(azi2);
-//		geod_direct(&g, 0, 0, 90, nan("0"), &lat2, &lon2, &azi2);
-//		result += checkNaN(lat2);
-//		result += checkNaN(lon2);
-//		result += checkNaN(azi2);
-//		geod_direct(&g, 0, 0, inf, 1000, &lat2, &lon2, &azi2);
-//		result += checkNaN(lat2);
-//		result += checkNaN(lon2);
-//		result += checkNaN(azi2);
-//		geod_direct(&g, 0, 0, nan("0"), 1000, &lat2, &lon2, &azi2);
-//		result += checkNaN(lat2);
-//		result += checkNaN(lon2);
-//		result += checkNaN(azi2);
-//		geod_direct(&g, 0, inf, 90, 1000, &lat2, &lon2, &azi2);
-//		result += lat2 == 0 ? 0 : 1;
-//		result += checkNaN(lon2);
-//		result += azi2 == 90 ? 0 : 1;
-//		geod_direct(&g, 0, nan("0"), 90, 1000, &lat2, &lon2, &azi2);
-//		result += lat2 == 0 ? 0 : 1;
-//		result += checkNaN(lon2);
-//		result += azi2 == 90 ? 0 : 1;
-//		geod_direct(&g, inf, 0, 90, 1000, &lat2, &lon2, &azi2);
-//		result += checkNaN(lat2);
-//		result += checkNaN(lon2);
-//		result += checkNaN(azi2);
-//		geod_direct(&g, nan("0"), 0, 90, 1000, &lat2, &lon2, &azi2);
-//		result += checkNaN(lat2);
-//		result += checkNaN(lon2);
-//		result += checkNaN(azi2);
-//	}
+		let geod = Geodesic.WGS84
+		var result = geod.direct(latitude: 0, longitude: 0, azimuth: 90, distance: .infinity)
+		#expect(result.latitude.isNaN)
+		#expect(result.longitude.isNaN)
+		#expect(result.azimuth.isNaN)
+
+		result = geod.direct(latitude: 0, longitude: 0, azimuth: 90, distance: .nan)
+		#expect(result.latitude.isNaN)
+		#expect(result.longitude.isNaN)
+		#expect(result.azimuth.isNaN)
+
+		result = geod.direct(latitude: 0, longitude: 0, azimuth: .infinity, distance: 1000)
+		#expect(result.latitude.isNaN)
+		#expect(result.longitude.isNaN)
+		#expect(result.azimuth.isNaN)
+
+		result = geod.direct(latitude: 0, longitude: 0, azimuth: .nan, distance: 1000)
+		#expect(result.latitude.isNaN)
+		#expect(result.longitude.isNaN)
+		#expect(result.azimuth.isNaN)
+
+		result = geod.direct(latitude: 0, longitude: .infinity, azimuth: 90, distance: 1000)
+		#expect(result.latitude == 0)
+		#expect(result.longitude.isNaN)
+		#expect(result.azimuth == 90)
+
+		result = geod.direct(latitude: 0, longitude: .nan, azimuth: 90, distance: 1000)
+		#expect(result.latitude == 0)
+		#expect(result.longitude.isNaN)
+		#expect(result.azimuth == 90)
+
+		result = geod.direct(latitude: .infinity, longitude: 0, azimuth: 90, distance: 1000)
+		#expect(result.latitude.isNaN)
+		#expect(result.longitude.isNaN)
+		#expect(result.azimuth.isNaN)
+
+		result = geod.direct(latitude: .nan, longitude: 0, azimuth: 90, distance: 1000)
+		#expect(result.latitude.isNaN)
+		#expect(result.longitude.isNaN)
+		#expect(result.azimuth.isNaN)
+	}
 
 	@Test
 	func testGeodSolve92() {
 		/* Check fix for inaccurate hypot with python 3.[89].  Problem reported
-		 * by agdhruv https://github.com/geopy/geopy/issues/466 ; see
+		 * by agdhruv https://github.com/geopy/geopy/issues/466  see
 		 * https://bugs.python.org/issue43088 */
 		let geod = Geodesic.WGS84
 		let result = geod.inverse(
@@ -868,37 +843,27 @@ struct GeodesicTests {
 		#expect(isEqual(result.distance, 0.264, precision: 0.5e-3))
 	}
 
-	// TODO: NaN?
-//	static int GeodSolve94(void) {
-//		/* Check fix for lat2 = nan being treated as lat2 = 0 (bug found
-//		 * 2021-07-26) */
-//		double azi1, azi2, s12;
-//		struct geod_geodesic g;
-//		int result = 0;
-//		geod_init(&g, wgs84_a, wgs84_f);
-//		geod_inverse(&g, 0, 0, nan("0"), 90, &s12, &azi1, &azi2);
-//		result += checkNaN(azi1);
-//		result += checkNaN(azi2);
-//		result += checkNaN(s12);
-//		return result;
-//	}
+	@Test()
+	func testGeodSolve94() {
+		/* Check fix for lat2 = nan being treated as lat2 = 0 (bug found
+		 * 2021-07-26) */
+		let geod = Geodesic.WGS84
+		let result = geod.inverse(latitude1: 0, longitude1: 0, latitude2: .nan, longitude2: 90)
+		#expect(result.azimuth1.isNaN)
+		#expect(result.azimuth2.isNaN)
+		#expect(result.distance.isNaN)
+	}
 
-	// TODO: non-WGS84 ellipsoid
-//	static int GeodSolve96(void) {
-//		/* Failure with long doubles found with test case from Nowak + Nowak Da
-//		 * Costa (2022).  Problem was using somg12 > 1 as a test that it needed
-//		 * to be set when roundoff could result in somg12 slightly bigger that 1.
-//		 * Found + fixed 2022-03-30. */
-//		double S12;
-//		struct geod_geodesic g;
-//		int result = 0;
-//		geod_init(&g, 6378137, 1/298.257222101);
-//		geod_geninverse(&g, 0, 0, 60.0832522871723, 89.8492185074635,
-//						nullptr, nullptr, nullptr,
-//						nullptr, nullptr, nullptr, &S12);
-//		result += checkEquals(S12, 42426932221845, 0.5);
-//		return result;
-//	}
+	@Test
+	func testGeodSolve96() {
+		/* Failure with long doubles found with test case from Nowak + Nowak Da
+		 * Costa (2022).  Problem was using somg12 > 1 as a test that it needed
+		 * to be set when roundoff could result in somg12 slightly bigger that 1.
+		 * Found + fixed 2022-03-30. */
+		let geod = Geodesic(equatorialRadius: 6378137, flattening: 1/298.257222101)
+		let result = geod.generalInverse(latitude1: 0, longitude1: 0, latitude2: 60.0832522871723, longitude2: 89.8492185074635)
+		#expect(isEqual(result.areaUnder, 42426932221845, precision: 0.5))
+	}
 
 	@Test
 	func testGeodSolve99() {
@@ -917,295 +882,335 @@ struct GeodesicTests {
 		#expect(isEqual(result.distance, 19987083.007, precision: 0.5e-3))
 	}
 
-	// TODO: non-WGS84 ellipsoid
-//	static int GeodSolve100(void) {
-//		/* Check fix for meridional failure for a strongly prolate ellipsoid.
-//		 * This was caused by assuming that sig12 < 1 guarantees the meridional
-//		 * geodesic is shortest (even though m12 < 0).  Counter example is tested
-//		 * here.  Bug is not present for f >= -2, b < 3*a.  For f = -2.1 the
-//		 * inverse calculation for 30.61 0 30.61 180 exhibits the bug. */
-//		double azi1, azi2, s12;
-//		struct geod_geodesic g;
-//		int result = 0;
-//		geod_init(&g, 1e6, -3);
-//		geod_inverse(&g, 30.0, 0.0, 30.0, 180.0,
-//					 &s12, &azi1, &azi2);
-//		/* Sloppy bounds checking because series solution is inaccurate for
-//		 * ellipsoids this eccentric. */
-//		result += checkEquals(azi1,  22.368806, 1.0 );
-//		result += checkEquals(azi2, 157.631194, 1.0 );
-//		result += checkEquals(s12,   1074081.6, 1e3 );
-//		return result;
-//	}
+	@Test
+	func testGeodSolve100() {
+		/* Check fix for meridional failure for a strongly prolate ellipsoid.
+		 * This was caused by assuming that sig12 < 1 guarantees the meridional
+		 * geodesic is shortest (even though m12 < 0).  Counter example is tested
+		 * here.  Bug is not present for f >= -2, b < 3*a.  For f = -2.1 the
+		 * inverse calculation for 30.61 0 30.61 180 exhibits the bug. */
+		let geod = Geodesic(equatorialRadius: 1e6, flattening: -3)
+		let result = geod.inverse(latitude1: 30.0, longitude1: 0.0, latitude2: 30.0, longitude2: 180.0)
+		/* Sloppy bounds checking because series solution is inaccurate for
+		 * ellipsoids this eccentric. */
+		#expect(isEqual(result.azimuth1, 22.368806, precision: 1.0))
+		#expect(isEqual(result.azimuth2, 157.631194, precision: 1.0))
+		#expect(isEqual(result.distance, 1074081.6, precision: 1e3))
+	}
 
-	// TODO: planimeter
-//	static int Planimeter0(void) {
-//		/* Check fix for pole-encircling bug found 2011-03-16 */
-//		double pa[4][2] = {{89, 0}, {89, 90}, {89, 180}, {89, 270}};
-//		double pb[4][2] = {{-89, 0}, {-89, 90}, {-89, 180}, {-89, 270}};
-//		double pc[4][2] = {{0, -1}, {-1, 0}, {0, 1}, {1, 0}};
-//		double pd[3][2] = {{90, 0}, {0, 0}, {0, 90}};
-//		struct geod_geodesic g;
-//		double perimeter, area;
-//		int result = 0;
-//		geod_init(&g, wgs84_a, wgs84_f);
-//
-//		planimeter(&g, pa, 4, &perimeter, &area);
-//		result += checkEquals(perimeter, 631819.8745, 1e-4);
-//		result += checkEquals(area, 24952305678.0, 1);
-//
-//		planimeter(&g, pb, 4, &perimeter, &area);
-//		result += checkEquals(perimeter, 631819.8745, 1e-4);
-//		result += checkEquals(area, -24952305678.0, 1);
-//
-//		planimeter(&g, pc, 4, &perimeter, &area);
-//		result += checkEquals(perimeter, 627598.2731, 1e-4);
-//		result += checkEquals(area, 24619419146.0, 1);
-//
-//		planimeter(&g, pd, 3, &perimeter, &area);
-//		result += checkEquals(perimeter, 30022685, 1);
-//		result += checkEquals(area, 63758202715511.0, 1);
-//
-//		polylength(&g, pd, 3, &perimeter);
-//		result += checkEquals(perimeter, 20020719, 1);
-//
-//		return result;
-//	}
-//
-//	static int Planimeter5(void) {
-//		/* Check fix for Planimeter pole crossing bug found 2011-06-24 */
-//		double points[3][2] = {{89, 0.1}, {89, 90.1}, {89, -179.9}};
-//		struct geod_geodesic g;
-//		double perimeter, area;
-//		int result = 0;
-//		geod_init(&g, wgs84_a, wgs84_f);
-//		planimeter(&g, points, 3, &perimeter, &area);
-//		result += checkEquals(perimeter, 539297, 1);
-//		result += checkEquals(area, 12476152838.5, 1);
-//		return result;
-//	}
-//
-//	static int Planimeter6(void) {
-//		/* Check fix for Planimeter lon12 rounding bug found 2012-12-03 */
-//		double pa[3][2] = {{9, -0.00000000000001}, {9, 180}, {9, 0}};
-//		double pb[3][2] = {{9, 0.00000000000001}, {9, 0}, {9, 180}};
-//		double pc[3][2] = {{9, 0.00000000000001}, {9, 180}, {9, 0}};
-//		double pd[3][2] = {{9, -0.00000000000001}, {9, 0}, {9, 180}};
-//		struct geod_geodesic g;
-//		double perimeter, area;
-//		int result = 0;
-//		geod_init(&g, wgs84_a, wgs84_f);
-//
-//		planimeter(&g, pa, 3, &perimeter, &area);
-//		result += checkEquals(perimeter, 36026861, 1);
-//		result += checkEquals(area, 0, 1);
-//		planimeter(&g, pb, 3, &perimeter, &area);
-//		result += checkEquals(perimeter, 36026861, 1);
-//		result += checkEquals(area, 0, 1);
-//		planimeter(&g, pc, 3, &perimeter, &area);
-//		result += checkEquals(perimeter, 36026861, 1);
-//		result += checkEquals(area, 0, 1);
-//		planimeter(&g, pd, 3, &perimeter, &area);
-//		result += checkEquals(perimeter, 36026861, 1);
-//		result += checkEquals(area, 0, 1);
-//		return result;
-//	}
-//
-//	static int Planimeter12(void) {
-//		/* Area of arctic circle (not really -- adjunct to rhumb-area test) */
-//		double points[3][2] = {{66.562222222, 0},
-//			{66.562222222, 180},
-//			{66.562222222, 360}};
-//		struct geod_geodesic g;
-//		double perimeter, area;
-//		int result = 0;
-//		geod_init(&g, wgs84_a, wgs84_f);
-//		planimeter(&g, points, 3, &perimeter, &area);
-//		result += checkEquals(perimeter, 10465729, 1);
-//		result += checkEquals(area, 0, 1);
-//		return result;
-//	}
-//
-//	static int Planimeter12r(void) {
-//		/* Area of arctic circle (not really -- adjunct to rhumb-area test) */
-//		double points[3][2] = {{66.562222222, -0},
-//			{66.562222222, -180},
-//			{66.562222222, -360}};
-//		struct geod_geodesic g;
-//		double perimeter, area;
-//		int result = 0;
-//		geod_init(&g, wgs84_a, wgs84_f);
-//		planimeter(&g, points, 3, &perimeter, &area);
-//		result += checkEquals(perimeter, 10465729, 1);
-//		result += checkEquals(area, 0, 1);
-//		return result;
-//	}
-//
-//	static int Planimeter13(void) {
-//		/* Check encircling pole twice */
-//		double points[6][2] = {{89,-360}, {89,-240}, {89,-120},
-//			{89,0}, {89,120}, {89,240}};
-//		struct geod_geodesic g;
-//		double perimeter, area;
-//		int result = 0;
-//		geod_init(&g, wgs84_a, wgs84_f);
-//		planimeter(&g, points, 6, &perimeter, &area);
-//		result += checkEquals(perimeter, 1160741, 1);
-//		result += checkEquals(area, 32415230256.0, 1);
-//		return result;
-//	}
-//
-//	static int Planimeter15(void) {
-//		/* Coverage tests, includes Planimeter15 - Planimeter18 (combinations of
-//		 * reverse and sign) + calls to testpoint, testedge, geod_polygonarea. */
-//		struct geod_geodesic g;
-//		struct geod_polygon p;
-//		double lat[] = {2, 1, 3}, lon[] = {1, 2, 3};
-//		double area, s12, azi1;
-//		double r = 18454562325.45119,
-//		a0 = 510065621724088.5093;  /* ellipsoid area */
-//		int result = 0;
-//		geod_init(&g, wgs84_a, wgs84_f);
-//		geod_polygon_init(&p, 0);
-//		geod_polygon_addpoint(&g, &p, lat[0], lon[0]);
-//		geod_polygon_addpoint(&g, &p, lat[1], lon[1]);
-//		geod_polygon_testpoint(&g, &p, lat[2], lon[2], 0, 1, &area, nullptr);
-//		result += checkEquals(area, r, 0.5);
-//		geod_polygon_testpoint(&g, &p, lat[2], lon[2], 0, 0, &area, nullptr);
-//		result += checkEquals(area, r, 0.5);
-//		geod_polygon_testpoint(&g, &p, lat[2], lon[2], 1, 1, &area, nullptr);
-//		result += checkEquals(area, -r, 0.5);
-//		geod_polygon_testpoint(&g, &p, lat[2], lon[2], 1, 0, &area, nullptr);
-//		result += checkEquals(area, a0-r, 0.5);
-//		geod_inverse(&g, lat[1], lon[1], lat[2], lon[2], &s12, &azi1, nullptr);
-//		geod_polygon_testedge(&g, &p, azi1, s12, 0, 1, &area, nullptr);
-//		result += checkEquals(area, r, 0.5);
-//		geod_polygon_testedge(&g, &p, azi1, s12, 0, 0, &area, nullptr);
-//		result += checkEquals(area, r, 0.5);
-//		geod_polygon_testedge(&g, &p, azi1, s12, 1, 1, &area, nullptr);
-//		result += checkEquals(area, -r, 0.5);
-//		geod_polygon_testedge(&g, &p, azi1, s12, 1, 0, &area, nullptr);
-//		result += checkEquals(area, a0-r, 0.5);
-//		geod_polygon_addpoint(&g, &p, lat[2], lon[2]);
-//		geod_polygon_compute(&g, &p, 0, 1, &area, nullptr);
-//		result += checkEquals(area, r, 0.5);
-//		geod_polygon_compute(&g, &p, 0, 0, &area, nullptr);
-//		result += checkEquals(area, r, 0.5);
-//		geod_polygon_compute(&g, &p, 1, 1, &area, nullptr);
-//		result += checkEquals(area, -r, 0.5);
-//		geod_polygon_compute(&g, &p, 1, 0, &area, nullptr);
-//		result += checkEquals(area, a0-r, 0.5);
-//		geod_polygonarea(&g, lat, lon, 3, &area, nullptr);
-//		result += checkEquals(area, r, 0.5);
-//		return result;
-//	}
-//
-//	static int Planimeter19(void) {
-//		/* Coverage tests, includes Planimeter19 - Planimeter20 (degenerate
-//		 * polygons) + extra cases.  */
-//		struct geod_geodesic g;
-//		struct geod_polygon p;
-//		double area, perim;
-//		int result = 0;
-//		geod_init(&g, wgs84_a, wgs84_f);
-//		geod_polygon_init(&p, 0);
-//		geod_polygon_compute(&g, &p, 0, 1, &area, &perim);
-//		result += area == 0 ? 0 : 1;
-//		result += perim == 0 ? 0 : 1;
-//		geod_polygon_testpoint(&g, &p, 1, 1, 0, 1, &area, &perim);
-//		result += area == 0 ? 0 : 1;
-//		result += perim == 0 ? 0 : 1;
-//		geod_polygon_testedge(&g, &p, 90, 1000, 0, 1, &area, &perim);
-//		result += checkNaN(area);
-//		result += checkNaN(perim);
-//		geod_polygon_addpoint(&g, &p, 1, 1);
-//		geod_polygon_compute(&g, &p, 0, 1, &area, &perim);
-//		result += area == 0 ? 0 : 1;
-//		result += perim == 0 ? 0 : 1;
-//		geod_polygon_init(&p, 1);
-//		geod_polygon_compute(&g, &p, 0, 1, nullptr, &perim);
-//		result += perim == 0 ? 0 : 1;
-//		geod_polygon_testpoint(&g, &p, 1, 1, 0, 1, nullptr, &perim);
-//		result += perim == 0 ? 0 : 1;
-//		geod_polygon_testedge(&g, &p, 90, 1000, 0, 1, nullptr, &perim);
-//		result += checkNaN(perim);
-//		geod_polygon_addpoint(&g, &p, 1, 1);
-//		geod_polygon_compute(&g, &p, 0, 1, nullptr, &perim);
-//		result += perim == 0 ? 0 : 1;
-//		geod_polygon_addpoint(&g, &p, 1, 1);
-//		geod_polygon_testedge(&g, &p, 90, 1000, 0, 1, nullptr, &perim);
-//		result += checkEquals(perim, 1000, 1e-10);
-//		geod_polygon_testpoint(&g, &p, 2, 2, 0, 1, nullptr, &perim);
-//		result += checkEquals(perim, 156876.149, 0.5e-3);
-//		return result;
-//	}
-//
-//	static int Planimeter21(void) {
-//		/* Some tests to add code coverage: multiple circlings of pole (includes
-//		 * Planimeter21 - Planimeter28) + invocations via testpoint and testedge. */
-//		struct geod_geodesic g;
-//		struct geod_polygon p;
-//		double area, lat = 45,
-//		a = 39.2144607176828184218, s = 8420705.40957178156285,
-//		r = 39433884866571.4277,    /* Area for one circuit */
-//		a0 = 510065621724088.5093;  /* Ellipsoid area */
-//		int result = 0, i;
-//		geod_init(&g, wgs84_a, wgs84_f);
-//		geod_polygon_init(&p, 0);
-//		geod_polygon_addpoint(&g, &p, lat,  60);
-//		geod_polygon_addpoint(&g, &p, lat, 180);
-//		geod_polygon_addpoint(&g, &p, lat, -60);
-//		geod_polygon_addpoint(&g, &p, lat,  60);
-//		geod_polygon_addpoint(&g, &p, lat, 180);
-//		geod_polygon_addpoint(&g, &p, lat, -60);
-//		for (i = 3; i <= 4; ++i) {
-//			geod_polygon_addpoint(&g, &p, lat,  60);
-//			geod_polygon_addpoint(&g, &p, lat, 180);
-//			geod_polygon_testpoint(&g, &p, lat, -60, 0, 1, &area, nullptr);
-//			result += checkEquals(area,  i*r, 0.5);
-//			geod_polygon_testpoint(&g, &p, lat, -60, 0, 0, &area, nullptr);
-//			result += checkEquals(area,  i*r, 0.5);
-//			geod_polygon_testpoint(&g, &p, lat, -60, 1, 1, &area, nullptr);
-//			result += checkEquals(area, -i*r, 0.5);
-//			geod_polygon_testpoint(&g, &p, lat, -60, 1, 0, &area, nullptr);
-//			result += checkEquals(area, -i*r + a0, 0.5);
-//			geod_polygon_testedge(&g, &p, a, s, 0, 1, &area, nullptr);
-//			result += checkEquals(area,  i*r, 0.5);
-//			geod_polygon_testedge(&g, &p, a, s, 0, 0, &area, nullptr);
-//			result += checkEquals(area,  i*r, 0.5);
-//			geod_polygon_testedge(&g, &p, a, s, 1, 1, &area, nullptr);
-//			result += checkEquals(area, -i*r, 0.5);
-//			geod_polygon_testedge(&g, &p, a, s, 1, 0, &area, nullptr);
-//			result += checkEquals(area, -i*r + a0, 0.5);
-//			geod_polygon_addpoint(&g, &p, lat, -60);
-//			geod_polygon_compute(&g, &p, 0, 1, &area, nullptr);
-//			result += checkEquals(area,  i*r, 0.5);
-//			geod_polygon_compute(&g, &p, 0, 0, &area, nullptr);
-//			result += checkEquals(area,  i*r, 0.5);
-//			geod_polygon_compute(&g, &p, 1, 1, &area, nullptr);
-//			result += checkEquals(area, -i*r, 0.5);
-//			geod_polygon_compute(&g, &p, 1, 0, &area, nullptr);
-//			result += checkEquals(area, -i*r + a0, 0.5);
-//		}
-//		return result;
-//	}
-//
-//	static int Planimeter29(void) {
-//		/* Check fix to transitdirect vs transit zero handling inconsistency */
-//		struct geod_geodesic g;
-//		struct geod_polygon p;
-//		double area;
-//		int result = 0;
-//		geod_init(&g, wgs84_a, wgs84_f);
-//		geod_polygon_init(&p, 0);
-//		geod_polygon_addpoint(&g, &p, 0, 0);
-//		geod_polygon_addedge(&g, &p,  90, 1000);
-//		geod_polygon_addedge(&g, &p,   0, 1000);
-//		geod_polygon_addedge(&g, &p, -90, 1000);
-//		geod_polygon_compute(&g, &p, 0, 1, &area, nullptr);
-//		/* The area should be 1e6.  Prior to the fix it was 1e6 - A/2, where
-//		 * A = ellipsoid area. */
-//		result += checkEquals(area, 1000000.0, 0.01);
-//		return result;
-//	}
+	@Test
+	func testPlanimeter0() {
+		/* Check fix for pole-encircling bug found 2011-03-16 */
+		let pointsA: [Point] = [
+			Point(latitude: 89, longitude: 0), Point(latitude: 89, longitude: 90), Point(latitude: 89, longitude: 180), Point(latitude: 89, longitude: 270)
+		]
+		let pointsB: [Point] = [
+			Point(latitude: -89, longitude: 0), Point(latitude: -89, longitude: 90), Point(latitude: -89, longitude: 180), Point(latitude: -89, longitude: 270)
+		]
+		let pointsC: [Point] = [
+			Point(latitude: 0, longitude: -1), Point(latitude: -1, longitude: 0), Point(latitude: 0, longitude: 1), Point(latitude: 1, longitude: 0)
+		]
+		let pointsD: [Point] = [
+			Point(latitude: 90, longitude: 0), Point(latitude: 0, longitude: 0), Point(latitude: 0, longitude: 90)
+		]
+
+		let geod = Geodesic.WGS84
+		var result = planimeter(geod, points: pointsA)
+		#expect(isEqual(result.perimeter, 631819.8745, precision: 1e-4))
+		#expect(isEqual(result.area, 24952305678.0, precision: 1))
+
+		result = planimeter(geod, points: pointsB)
+		#expect(isEqual(result.perimeter, 631819.8745, precision: 1e-4))
+		#expect(isEqual(result.area, -24952305678.0, precision: 1))
+
+		result = planimeter(geod, points: pointsC)
+		#expect(isEqual(result.perimeter, 627598.2731, precision: 1e-4))
+		#expect(isEqual(result.area, 24619419146.0, precision: 1))
+
+		result = planimeter(geod, points: pointsD)
+		#expect(isEqual(result.perimeter, 30022685, precision: 1))
+		#expect(isEqual(result.area, 63758202715511.0, precision: 1))
+
+		let perimeter = polylength(geod, points: pointsD)
+		#expect(isEqual(perimeter, 20020719, precision: 1))
+	}
+
+	@Test
+	func testPlanimeter5() {
+		/* Check fix for Planimeter pole crossing bug found 2011-06-24 */
+		let points = [Point(latitude: 89, longitude: 0.1), Point(latitude: 89, longitude: 90.1), Point(latitude: 89, longitude: -179.9)]
+		let geod = Geodesic.WGS84
+		let result = planimeter(geod, points: points)
+		#expect(isEqual(result.perimeter, 539297, precision: 1))
+		#expect(isEqual(result.area, 12476152838.5, precision: 1))
+	}
+
+	@Test
+	func testPlanimeter6() {
+		/* Check fix for Planimeter lon12 rounding bug found 2012-12-03 */
+		let pointsA = [
+			Point(latitude: 9, longitude: -0.00000000000001),
+			Point(latitude: 9, longitude: 180),
+			Point(latitude: 9, longitude: 0)
+		]
+		let pointsB = [
+			Point(latitude: 9, longitude: 0.00000000000001),
+			Point(latitude: 9, longitude: 0),
+			Point(latitude: 9, longitude: 180)
+		]
+		let pointsC = [
+			Point(latitude: 9, longitude: 0.00000000000001),
+			Point(latitude: 9, longitude: 180),
+			Point(latitude: 9, longitude: 0)
+		]
+		let pointsD = [
+			Point(latitude: 9, longitude: -0.00000000000001),
+			Point(latitude: 9, longitude: 0),
+			Point(latitude: 9, longitude: 180)
+		]
+
+		let geod = Geodesic.WGS84
+		var result = planimeter(geod, points: pointsA)
+		#expect(isEqual(result.perimeter, 36026861, precision: 1))
+		#expect(isEqual(result.area, 0, precision: 1))
+
+		result = planimeter(geod, points: pointsB)
+		#expect(isEqual(result.perimeter, 36026861, precision: 1))
+		#expect(isEqual(result.area, 0, precision: 1))
+
+		result = planimeter(geod, points: pointsC)
+		#expect(isEqual(result.perimeter, 36026861, precision: 1))
+		#expect(isEqual(result.area, 0, precision: 1))
+
+		result = planimeter(geod, points: pointsD)
+		#expect(isEqual(result.perimeter, 36026861, precision: 1))
+		#expect(isEqual(result.area, 0, precision: 1))
+	}
+
+	@Test
+	func testPlanimeter12() {
+		/* Area of arctic circle (not really -- adjunct to rhumb-area test) */
+		let points = [
+			Point(latitude: 66.562222222, longitude: 0),
+			Point(latitude: 66.562222222, longitude: 180),
+			Point(latitude: 66.562222222, longitude: 360)
+		]
+		let geod = Geodesic.WGS84
+		let result = planimeter(geod, points: points)
+		#expect(isEqual(result.perimeter, 10465729, precision: 1))
+		#expect(isEqual(result.area, 0, precision: 1))
+	}
+
+	@Test
+	func testPlanimeter12r() {
+		/* Area of arctic circle (not really -- adjunct to rhumb-area test) */
+		let points = [
+			Point(latitude: 66.562222222, longitude: -0),
+			Point(latitude: 66.562222222, longitude: -180),
+			Point(latitude: 66.562222222, longitude: -360)
+		]
+		let geod = Geodesic.WGS84
+		let result = planimeter(geod, points: points)
+		#expect(isEqual(result.perimeter, 10465729, precision: 1))
+		#expect(isEqual(result.area, 0, precision: 1))
+	}
+
+	@Test
+	func testPlanimeter13() {
+		/* Check encircling pole twice */
+		let points = [
+			Point(latitude: 89, longitude: -360),
+			Point(latitude: 89, longitude: -240),
+			Point(latitude: 89, longitude: -120),
+			Point(latitude: 89, longitude: 0),
+			Point(latitude: 89, longitude: 120),
+			Point(latitude: 89, longitude: 240)
+		]
+		let geod = Geodesic.WGS84
+		let result = planimeter(geod, points: points)
+		#expect(isEqual(result.perimeter, 1160741, precision: 1))
+		#expect(isEqual(result.area, 32415230256.0, precision: 1))
+	}
+
+	@Test
+	func testPlanimeter15() {
+		/* Coverage tests, includes Planimeter15 - Planimeter18 (combinations of
+		 * reverse and sign) + calls to testpoint, testedge, geod_polygonarea. */
+		let points = [
+			Point(latitude: 2, longitude: 1),
+			Point(latitude: 1, longitude: 2),
+			Point(latitude: 3, longitude: 3)
+		]
+
+		let r = 18454562325.45119
+		let a0 = 510065621724088.5093  /* ellipsoid area */
+
+		let geod = Geodesic.WGS84
+		let polygon = Polygon(isPolyline: false)
+		polygon.addPoint(geod: geod, point: points[0])
+		polygon.addPoint(geod: geod, point: points[1])
+
+		var result = polygon.testPoint(geod: geod, point: points[2], reverse: false, sign: true)
+		#expect(isEqual(result.area, r, precision: 0.5))
+		result = polygon.testPoint(geod: geod, point: points[2], reverse: false, sign: false)
+		#expect(isEqual(result.area, r, precision: 0.5))
+		result = polygon.testPoint(geod: geod, point: points[2], reverse: true, sign: true)
+		#expect(isEqual(result.area, -r, precision: 0.5))
+		result = polygon.testPoint(geod: geod, point: points[2], reverse: true, sign: false)
+		#expect(isEqual(result.area, a0-r, precision: 0.5))
+
+		let inverseResult = geod.inverse(
+			latitude1: points[1].latitude,
+			longitude1: points[1].longitude,
+			latitude2: points[2].latitude,
+			longitude2: points[2].longitude
+		)
+
+		result = polygon.testEdge(geod: geod, azimuth: inverseResult.azimuth1, distance: inverseResult.distance, reverse: false, sign: true)
+		#expect(isEqual(result.area, r, precision: 0.5))
+
+		result = polygon.testEdge(geod: geod, azimuth: inverseResult.azimuth1, distance: inverseResult.distance, reverse: false, sign: false)
+		#expect(isEqual(result.area, r, precision: 0.5))
+
+		result = polygon.testEdge(geod: geod, azimuth: inverseResult.azimuth1, distance: inverseResult.distance, reverse: true, sign: true)
+		#expect(isEqual(result.area, -r, precision: 0.5))
+
+		result = polygon.testEdge(geod: geod, azimuth: inverseResult.azimuth1, distance: inverseResult.distance, reverse: true, sign: false)
+		#expect(isEqual(result.area, a0-r, precision: 0.5))
+
+		polygon.addPoint(geod: geod, point: points[2])
+		result = polygon.compute(geod: geod, reverse: false, sign: true)
+		#expect(isEqual(result.area, r, precision: 0.5))
+
+		result = polygon.compute(geod: geod, reverse: false, sign: false)
+		#expect(isEqual(result.area, r, precision: 0.5))
+
+		result = polygon.compute(geod: geod, reverse: true, sign: true)
+		#expect(isEqual(result.area, -r, precision: 0.5))
+
+		result = polygon.compute(geod: geod, reverse: true, sign: false)
+		#expect(isEqual(result.area, a0-r, precision: 0.5))
+
+		let areaResult = geod.polygonArea(points: points)
+		#expect(isEqual(areaResult.area, r, precision: 0.5))
+	}
+
+	@Test
+	func testPlanimeter19() {
+		/* Coverage tests, includes Planimeter19 - Planimeter20 (degenerate
+		 * polygons) + extra cases.  */
+		let geod = Geodesic.WGS84
+		let polygon = Polygon(isPolyline: false)
+		var result = polygon.compute(geod: geod, reverse: false, sign: true)
+		#expect(result.area == 0)
+		#expect(result.perimeter == 0)
+
+		result = polygon.testPoint(geod: geod, point: Point(latitude: 1, longitude: 1), reverse: false, sign: true)
+		#expect(result.area == 0)
+		#expect(result.perimeter == 0)
+
+		result = polygon.testEdge(geod: geod, azimuth: 90, distance: 1000, reverse: false, sign: true)
+		#expect(result.area.isNaN)
+		#expect(result.perimeter.isNaN)
+
+		polygon.addPoint(geod: geod, point: Point(latitude: 1, longitude: 1))
+		result = polygon.compute(geod: geod, reverse: false, sign: true)
+		#expect(result.area == 0)
+		#expect(result.perimeter == 0)
+
+		let polylinePolygon = Polygon(isPolyline: true)
+		var polyResult = polylinePolygon.compute(geod: geod, reverse: false, sign: true)
+		#expect(polyResult.perimeter == 0)
+
+		polyResult = polylinePolygon.testPoint(geod: geod, point: Point(latitude: 1, longitude: 1), reverse: false, sign: true)
+		#expect(polyResult.perimeter == 0)
+
+		polyResult = polylinePolygon.testEdge(geod: geod, azimuth: 90, distance: 1000, reverse: false, sign: true)
+		#expect(polyResult.perimeter.isNaN)
+
+		polylinePolygon.addPoint(geod: geod, point: Point(latitude: 1, longitude: 1))
+		polyResult = polylinePolygon.compute(geod: geod, reverse: false, sign: true)
+		#expect(polyResult.perimeter == 0)
+
+		polylinePolygon.addPoint(geod: geod, point: Point(latitude: 1, longitude: 1))
+
+		polyResult = polylinePolygon.testEdge(geod: geod, azimuth: 90, distance: 1000, reverse: false, sign: true)
+		#expect(isEqual(polyResult.perimeter, 1000, precision: 1e-10))
+
+		polyResult = polylinePolygon.testPoint(geod: geod, point: Point(latitude: 2, longitude: 2), reverse: false, sign: true)
+		#expect(isEqual(polyResult.perimeter, 156876.149, precision: 0.5e-3))
+	}
+
+	@Test
+	func testPlanimeter21() {
+		/* Some tests to add code coverage: multiple circlings of pole (includes
+		 * Planimeter21 - Planimeter28) + invocations via testpoint and testedge. */
+		let a = 39.2144607176828184218
+		let s = 8420705.40957178156285
+		// Area for one circuit
+		let r = 39433884866571.4277
+		// Ellipsoid area
+		let a0 = 510065621724088.5093
+		let lat = 45.0
+
+		let geod = Geodesic.WGS84
+		let polygon = Polygon(isPolyline: false)
+
+		polygon.addPoint(geod: geod, point: Point(latitude: lat, longitude: 60))
+		polygon.addPoint(geod: geod, point: Point(latitude: lat, longitude: 180))
+		polygon.addPoint(geod: geod, point: Point(latitude: lat, longitude: -60))
+		polygon.addPoint(geod: geod, point: Point(latitude: lat, longitude: 60))
+		polygon.addPoint(geod: geod, point: Point(latitude: lat, longitude: 180))
+		polygon.addPoint(geod: geod, point: Point(latitude: lat, longitude: -60))
+
+		var result: (area: Double, perimeter: Double)
+		for i in 3...4 {
+			polygon.addPoint(geod: geod, point: Point(latitude: lat, longitude: 60))
+			polygon.addPoint(geod: geod, point: Point(latitude: lat, longitude: 180))
+			result = polygon.testPoint(geod: geod, point: Point(latitude: lat, longitude: -60), reverse: false, sign: true)
+			#expect(isEqual(result.area, Double(i) * r, precision: 0.5))
+			result = polygon.testPoint(geod: geod, point: Point(latitude: lat, longitude: -60), reverse: false, sign: false)
+			#expect(isEqual(result.area, Double(i) * r, precision: 0.5))
+			result = polygon.testPoint(geod: geod, point: Point(latitude: lat, longitude: -60), reverse: true, sign: true)
+			#expect(isEqual(result.area, -Double(i) * r, precision: 0.5))
+			result = polygon.testPoint(geod: geod, point: Point(latitude: lat, longitude: -60), reverse: true, sign: false)
+			#expect(isEqual(result.area, -Double(i) * r + a0, precision: 0.5))
+
+			result = polygon.testEdge(geod: geod, azimuth: a, distance: s, reverse: false, sign: true)
+			#expect(isEqual(result.area, Double(i) * r, precision: 0.5))
+			result = polygon.testEdge(geod: geod, azimuth:a, distance: s, reverse: false, sign: false)
+			#expect(isEqual(result.area, Double(i) * r, precision: 0.5))
+			result = polygon.testEdge(geod: geod, azimuth:a, distance: s, reverse: true, sign: true)
+			#expect(isEqual(result.area, -Double(i) * r, precision: 0.5))
+			result = polygon.testEdge(geod: geod, azimuth:a, distance: s, reverse: true, sign: false)
+			#expect(isEqual(result.area, -Double(i) * r + a0, precision: 0.5))
+
+			polygon.addPoint(geod: geod, point: Point(latitude: lat, longitude: -60))
+
+			result = polygon.compute(geod: geod, reverse: false, sign: true)
+			#expect(isEqual(result.area, Double(i) * r, precision: 0.5))
+			result = polygon.compute(geod: geod, reverse: false, sign: false)
+			#expect(isEqual(result.area, Double(i) * r, precision: 0.5))
+			result = polygon.compute(geod: geod, reverse: true, sign: true)
+			#expect(isEqual(result.area, -Double(i) * r, precision: 0.5))
+			result = polygon.compute(geod: geod, reverse: true, sign: false)
+			#expect(isEqual(result.area, -Double(i) * r + a0, precision: 0.5))
+		}
+	}
+
+	@Test
+	func testPlanimeter29() {
+		/* Check fix to transitdirect vs transit zero handling inconsistency */
+		let geod = Geodesic.WGS84
+		let polygon = Polygon(isPolyline: false)
+		polygon.addPoint(geod: geod, point: Point(latitude: 0, longitude: 0))
+		polygon.addEdge(geod: geod, azimuth: 90, distance: 1000)
+		polygon.addEdge(geod: geod, azimuth: 0, distance: 1000)
+		polygon.addEdge(geod: geod, azimuth: -90, distance: 1000)
+
+		let result = polygon.compute(geod: geod, reverse: false, sign: true)
+		/* The area should be 1e6.  Prior to the fix it was 1e6 - A/2, where
+		 * A = ellipsoid area. */
+		#expect(isEqual(result.area, 1000000.0, precision: 0.01))
+	}
 }

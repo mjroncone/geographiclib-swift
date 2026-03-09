@@ -22,11 +22,11 @@ private let nC = GEODESIC_ORDER + 1
 private let maxit1  = 20
 private let maxit2  = maxit1 + Int(Double.significandBitCount) + 10
 
-private let tiny    = sqrt(Double.leastNormalMagnitude)
-private let tol0    = Double.ulpOfOne
-private let tol1    = 200 * tol0
-private let tol2    = sqrt(tol0)
-private let tolb    = tol0
+private let tiny = sqrt(Double.leastNormalMagnitude)
+private let tol0 = Double.ulpOfOne
+private let tol1 = 200 * tol0
+private let tol2 = sqrt(tol0)
+private let tolb = tol0
 private let xthresh = 1000 * tol2
 
 private let degree  = Double.pi / hd
@@ -162,8 +162,7 @@ private func sincosd(_ x: Double) -> (sin: Double, cos: Double) {
 		sinx = -c
 		cosx = s
 	}
-	// TODO: do I need this or is it unique to C?
-	cosx += 0
+	
 	if sinx == 0 {
 		sinx = copysign(sinx, x)
 	}
@@ -194,8 +193,6 @@ private func sincosde(_ x: Double, _ t: Double) -> (sin: Double, cos: Double) {
 		sinx = -c
 		cosx =  s
 	}
-	// TODO: do I need this or is it C specific?
-	cosx += 0
 	if sinx == 0 {
 		sinx = copysign(sinx, x)
 	}
@@ -263,10 +260,7 @@ public struct Geodesic: Sendable {
 		flattening: WGS84_FLATTENING
 	)
 
-	private func calcAuthalicRadiusSq(a: Double, b: Double, e2: Double) {
-	}
-
-	init(equatorialRadius a: Double, flattening f: Double) {
+	public init(equatorialRadius a: Double, flattening f: Double) {
 		self.equatorialRadius = a
 		self.flattening = f
 		self.f1 = 1 - flattening
@@ -408,7 +402,7 @@ public struct Geodesic: Sendable {
 		}
 	}
 
-	private func genposition(
+	internal func genposition(
 		line: Line,
 		s12_a12: Double,
 		flags: Set<Flag>,
@@ -419,14 +413,16 @@ public struct Geodesic: Sendable {
 		var omg12: Double, lam12: Double, lon12: Double
 		var ssig2: Double, csig2: Double, sbet2: Double, cbet2: Double, somg2: Double, comg2: Double, salp2: Double, calp2: Double, dn2: Double
 		
-		// TODO: impossible distance
-		//		outmask &= line.caps & OUT_ALL
-		//		if (!( (flags & GEOD_ARCMODE ||
-		//				((unsigned)line.caps &
-		//				 ((unsigned)GEOD_DISTANCE_IN & (unsigned)OUT_ALL))) ))
-		//			/* Impossible distance calculation requested */
-		//			return NaN
-		
+		if (
+			!(
+				flags.contains(.arcMode) ||
+				line.capabilities.contains(.distanceIn)
+			)
+		) {
+			/* Impossible distance calculation requested */
+			return GeneralDirectGeodesicResult(latitude: .nan, longitude: .nan, azimuth: .nan, distance: .nan, m12: .nan, M12: .nan, M21: .nan, areaUnder: .nan, arcLength: .nan)
+		}
+
 		if flags.contains(.arcMode) {
 			/* Interpret s12_a12 as spherical arc length */
 			sig12 = s12_a12 * degree
@@ -589,9 +585,13 @@ public struct Geodesic: Sendable {
 		)
 	}
 
+	func polygonArea(points: [Point]) -> (area: Double, perimeter: Double) {
+		let polygon = Polygon(isPolyline: false, points: points, geodesic: self)
+		return polygon.compute(geod: self, reverse: false, sign: true)
+	}
+
 	// TODO: add in all conditional paths, to reduce unncessary computation.
-	private func lengths(
-		_ eps: Double, _ sig12: Double,
+	private func lengths( _ eps: Double, _ sig12: Double,
 		_ ssig1: Double, _ csig1: Double, _ dn1: Double,
 		_ ssig2: Double, _ csig2: Double, _ dn2: Double,
 		_ cbet1: Double, _ cbet2: Double,
@@ -658,7 +658,6 @@ public struct Geodesic: Sendable {
 		return uv / (sqrt(uv + sq(w)) + w)
 	}
 
-	// TODO: verify what this function is doing
 	private func inverseStart(
 		_ sbet1: Double, _ cbet1: Double, _ dn1: Double,
 		_ sbet2: Double, _ cbet2: Double, _ dn2: Double,
@@ -689,22 +688,25 @@ public struct Geodesic: Sendable {
 		}
 
 		salp1 = cbet2 * somg12
-		calp1 = comg12 >= 0
-		? sbet12  + cbet2 * sbet1 * sq(somg12) / (1 + comg12)
-		: sbet12a - cbet2 * sbet1 * sq(somg12) / (1 - comg12)
+		calp1 = comg12 >= 0 ?
+			sbet12  + cbet2 * sbet1 * sq(somg12) / (1 + comg12) :
+			sbet12a - cbet2 * sbet1 * sq(somg12) / (1 - comg12)
 
 		let ssig12 = hypot(salp1, calp1)
 		let csig12 = sbet1 * sbet2 + cbet1 * cbet2 * comg12
 
 		if shortline && ssig12 < etol2 {
 			salp2 = cbet1 * somg12
-			calp2 = sbet12 - cbet1 * sbet2 *
-			(comg12 >= 0 ? sq(somg12) / (1 + comg12) : 1 - comg12)
+			calp2 = (
+				sbet12 - cbet1 * sbet2 * (
+					comg12 >= 0 ? sq(somg12) / (1 + comg12) : 1 - comg12
+				)
+			)
 			norm(&salp2, &calp2)
 			let sig12 = atan2(ssig12, csig12)
 			return (sig12, salp1, calp1, salp2, calp2, dnm)
 		} else if abs(n) > 0.1 || csig12 >= 0 || ssig12 >= 6 * abs(n) * .pi * sq(cbet1) {
-			// zeroth-order approximation is fine
+			// Nothing to do, zeroth-order approximation is OK
 		} else {
 			let lam12x = atan2(-slam12, -clam12)
 			var x = 0.0, y = 0.0, lamscale = 0.0, betscale = 0.0
@@ -827,55 +829,98 @@ public struct Geodesic: Sendable {
 		return (lam12, salp2, calp2, sig12, ssig1, csig1, ssig2, csig2, eps, domg12, dlam12)
 	}
 
-	// TODO: verify what this function is doing
 	private func geninverseInt(
 		_ lat1: Double,
 		_ lon1: Double,
 		_ lat2: Double,
 		_ lon2: Double,
-		capabilities: Set<Capability>
+		capabilities: Set<Capability> = Set(Capability.allCases)
 	) -> (a12: Double, s12: Double, salp1: Double, calp1: Double,
 		  salp2: Double, calp2: Double, m12: Double, M12: Double, M21: Double, S12: Double) {
 
+		guard !lat1.isNaN && !lon1.isNaN && !lat2.isNaN && !lon2.isNaN else {
+			return (
+				a12: .nan, s12: .nan, salp1: .nan, calp1: .nan, salp2: .nan,
+				calp2: .nan, m12: .nan, M12: .nan, M21: .nan, S12: .nan
+			)
+		}
 		var s12 = 0.0, m12 = 0.0, M12 = 0.0, M21 = 0.0, S12 = 0.0
 
-		let (lon12Raw, lon12s) = angDiff(lon1, lon2)
-		var lon12 = lon12Raw
-		let lonsign = lon12 < 0 ? -1.0 : 1.0
-		lon12 *= lonsign
-		let lon12sMod = lon12s * lonsign
-		let lam12 = lon12 * degree
-		let (slam12, clam12) = sincosde(lon12, lon12sMod)
-		// supplementary
-		let _ = (hd - lon12) - lon12sMod
+		/* Compute longitude difference (AngDiff does this carefully).  Result is
+		 * in [-180, 180] but -180 is only for west-going geodesics.  180 is for
+		 * east-going and meridional geodesics. */
+		var (lon12, lon12s) = angDiff(lon1, lon2)
 
+		// Make longitude difference positive.
+		var lonsign = lon12 < 0 ? -1.0 : 1.0
+		lon12 *= lonsign
+		lon12s *= lonsign
+		let lam12 = lon12 * degree
+
+		// Calculate sincos of lon12 + error (this applies AngRound internally).
+		let (slam12, clam12) = sincosde(lon12, lon12s)
+
+		// the supplementary longitude difference
+		lon12s = (hd - lon12) - lon12s
+
+		
+		// If really close to the equator, treat as on equator.
 		var lat1 = angRound(latFix(lat1))
 		var lat2 = angRound(latFix(lat2))
 
-		var lonsignI = Int(lonsign)
+		/* Swap points so that point with higher (abs) latitude is point 1
+		 * If one latitude is a nan, then it becomes lat1. */
 		let swapp: Double = (abs(lat1) < abs(lat2) || lat2.isNaN) ? -1 : 1
 		if swapp < 0 {
-			lonsignI *= -1
+			lonsign *= -1.0
 			swap(&lat1, &lat2)
 		}
+
+		// Make lat1 <= -0
 		let latsign: Double = lat1 < 0 || (lat1 == 0 && lat1.sign == .minus) ? 1 : -1
 		lat1 *= latsign
 		lat2 *= latsign
 
+		/* Now we have
+		 *
+		 *     0 <= lon12 <= 180
+		 *     -90 <= lat1 <= -0
+		 *     lat1 <= lat2 <= -lat1
+		 *
+		 * longsign, swapp, latsign register the transformation to bring the
+		 * coordinates to this canonical form.  In all cases, 1 means no change was
+		 * made.  We make these transformations so that there are few cases to
+		 * check, e.g., on verifying quadrants in atan2.  In addition, this
+		 * enforces some symmetries in the results returned. */
 		var (sbet1, cbet1) = sincosd(lat1)
 		sbet1 *= f1
+
+		// Ensure cbet1 = +epsilon at poles
 		norm(&sbet1, &cbet1)
 		cbet1 = max(tiny, cbet1)
 
 		var (sbet2, cbet2) = sincosd(lat2)
 		sbet2 *= f1
+
+		// Ensure cbet2 = +epsilon at poles
 		norm(&sbet2, &cbet2)
 		cbet2 = max(tiny, cbet2)
 
+		/* If cbet1 < -sbet1, then cbet2 - cbet1 is a sensitive measure of the
+		 * |bet1| - |bet2|.  Alternatively (cbet1 >= -sbet1), abs(sbet2) + sbet1 is
+		 * a better measure.  This logic is used in assigning calp2 in Lambda12.
+		 * Sometimes these quantities vanish and in that case we force bet2 = +/-
+		 * bet1 exactly.  An example where is is necessary is the inverse problem
+		 * 48.522876735459 0 -48.52287673545898293 179.599720456223079643
+		 * which failed with Visual Studio 10 (Release and Debug) */
 		if cbet1 < -sbet1 {
-			if cbet2 == cbet1 { sbet2 = copysign(sbet1, sbet2) }
+			if cbet2 == cbet1 {
+				sbet2 = copysign(sbet1, sbet2)
+			}
 		} else {
-			if abs(sbet2) == -sbet1 { cbet2 = cbet1 }
+			if abs(sbet2) == -sbet1 {
+				cbet2 = cbet1
+			}
 		}
 
 		let dn1 = sqrt(1 + ep2 * sq(sbet1))
@@ -891,27 +936,43 @@ public struct Geodesic: Sendable {
 		var meridian = lat1 == -qd || slam12 == 0
 
 		if meridian {
+			/* Endpoints are on a single full meridian, so the geodesic might lie on
+			 * a meridian. */
 			calp1 = clam12
+			// Head to the target longitude
 			salp1 = slam12
+
 			calp2 = 1
+			// At the target we're heading north
 			salp2 = 0
 
 			let ssig1 = sbet1, csig1 = calp1 * cbet1
 			let ssig2 = sbet2, csig2 = calp2 * cbet2
 
+			// tan(bet) = tan(sig) * cos(alp)
 			sig12 = atan2(max(0.0, csig1 * ssig2 - ssig1 * csig2) + 0,
 						  csig1 * csig2 + ssig1 * ssig2)
 
+			// TODO: pass capabilities to avoid extra calcs
 			let r = lengths(n, sig12,
 							ssig1, csig1, dn1,
 							ssig2, csig2, dn2,
 							cbet1, cbet2, &Ca)
 			s12x = r.s12b
 			m12x = r.m12b
-			M12 = r.M12
-			M21 = r.M21
 
+			if capabilities.contains(.geodesicScale) {
+				M12 = r.M12
+				M21 = r.M21
+			}
+
+			/* Add the check for sig12 since zero length geodesics might yield m12 <
+			 * 0.  Test case was
+			 *
+			 *    echo 20.001 0 20.001 0 | GeodSolve -i
+			 */
 			if sig12 < tol2 || m12x >= 0 {
+				// Need at least 2, to handle 90 0 90 180
 				if sig12 < 3 * tiny || (sig12 < tol0 && (s12x < 0 || m12x < 0)) {
 					sig12 = 0
 					m12x = 0
@@ -921,6 +982,7 @@ public struct Geodesic: Sendable {
 				s12x *= b
 				a12 = sig12 / degree
 			} else {
+				// m12 < 0, i.e., prolate and too close to anti-podal
 				meridian = false
 			}
 		}
@@ -935,10 +997,16 @@ public struct Geodesic: Sendable {
 			sig12 = lam12 / f1
 			omg12 = sig12
 			m12x = b * sin(sig12)
-			M12 = cos(sig12)
-			M21 = M12
+			if capabilities.contains(.geodesicScale) {
+				M12 = cos(sig12)
+				M21 = M12
+			}
 			a12 = lon12 / f1
 		} else if !meridian {
+			/* Now point1 and point2 belong within a hemisphere bounded by a
+			 * meridian and geodesic is neither meridional or equatorial. */
+
+			/* Figure a starting point for Newton's method */
 			let start = inverseStart(sbet1, cbet1, dn1, sbet2, cbet2, dn2,
 									 lam12, slam12, clam12, &Ca)
 			sig12 = start.sig12
@@ -946,18 +1014,29 @@ public struct Geodesic: Sendable {
 			calp1 = start.calp1
 			salp2 = start.salp2
 			calp2 = start.calp2
-			let dnm = start.dnm
 
 			if sig12 >= 0 {
-				// short line
-				s12x = sig12 * b * dnm
-				m12x = sq(dnm) * b * sin(sig12 / dnm)
-				M12 = cos(sig12 / dnm)
-				M21 = M12
+				// Short lines (InverseStart sets salp2, calp2, dnm)
+				s12x = sig12 * b * start.dnm
+				m12x = sq(start.dnm) * b * sin(sig12 / start.dnm)
+				if capabilities.contains(.geodesicScale) {
+					M12 = cos(sig12 / start.dnm)
+					M21 = M12
+				}
 				a12 = sig12 / degree
-				omg12 = lam12 / (f1 * dnm)
+				omg12 = lam12 / (f1 * start.dnm)
 			} else {
-				// Newton's method
+				/* Newton's method.  This is a straightforward solution of f(alp1) =
+				 * lambda12(alp1) - lam12 = 0 with one wrinkle.  f(alp) has exactly one
+				 * root in the interval (0, pi) and its derivative is positive at the
+				 * root.  Thus f(alp) is positive for alp > alp1 and negative for alp <
+				 * alp1.  During the course of the iteration, a range (alp1a, alp1b) is
+				 * maintained which brackets the root and with each evaluation of
+				 * f(alp) the range is shrunk, if possible.  Newton's method is
+				 * restarted whenever the derivative of f is negative (because the new
+				 * value of alp1 is then further from the solution) or if the new
+				 * estimate of alp1 lies outside (0,pi); in this case, the new starting
+				 * guess is taken to be (alp1a + alp1b) / 2. */
 				var ssig1 = 0.0, csig1 = 0.0, ssig2 = 0.0, csig2 = 0.0
 				var eps = 0.0, domg12 = 0.0
 				var numit = 0
@@ -966,6 +1045,8 @@ public struct Geodesic: Sendable {
 				var tripn = false, tripb = false
 
 				while true {
+					/* the WGS84 test set: mean = 1.47, sd = 1.25, max = 16
+					 * WGS84 and random input: mean = 2.85, sd = 0.60 */
 					let r = lambda12(sbet1, cbet1, dn1, sbet2, cbet2, dn2,
 									 salp1, calp1, slam12, clam12,
 									 numit < maxit1, &Ca)
@@ -978,12 +1059,15 @@ public struct Geodesic: Sendable {
 					csig1 = r.csig1
 					ssig2 = r.ssig2
 					csig2 = r.csig2
-					eps   = r.eps
+					eps = r.eps
 					domg12 = r.domg12
 
+					// Reversed test to allow escape with NaNs, maxit2 iterations is sufficient for an accurate result
 					if tripb || !(abs(v) >= (tripn ? 8 : 1) * tol0) || numit == maxit2 {
 						break
 					}
+
+					// Update bracketing values
 					if v > 0 && (numit > maxit1 || calp1 / salp1 > calp1b / salp1b) {
 						salp1b = salp1
 						calp1b = calp1
@@ -991,11 +1075,14 @@ public struct Geodesic: Sendable {
 						salp1a = salp1
 						calp1a = calp1
 					}
+
 					if numit < maxit1 && dv > 0 {
 						let dalp1 = -v / dv
 						if abs(dalp1) < .pi {
-							let sdalp1 = sin(dalp1), cdalp1 = cos(dalp1)
+							let sdalp1 = sin(dalp1)
+							let cdalp1 = cos(dalp1)
 							let nsalp1 = salp1 * cdalp1 + calp1 * sdalp1
+
 							if nsalp1 > 0 {
 								calp1 = calp1 * cdalp1 - salp1 * sdalp1
 								salp1 = nsalp1
@@ -1006,92 +1093,140 @@ public struct Geodesic: Sendable {
 							}
 						}
 					}
+					/* Either dv was not positive or updated value was outside legal
+					 * range.  Use the midpoint of the bracket as the next estimate.
+					 * This mechanism is not needed for the WGS84 ellipsoid, but it does
+					 * catch problems with more eccentric ellipsoids.  Its efficacy is
+					 * such for the WGS84 test set with the starting guess set to alp1 =
+					 * 90deg:
+					 * the WGS84 test set: mean = 5.21, sd = 3.93, max = 24
+					 * WGS84 and random input: mean = 4.74, sd = 0.99 */
 					salp1 = (salp1a + salp1b) / 2
 					calp1 = (calp1a + calp1b) / 2
 					norm(&salp1, &calp1)
 					tripn = false
-					tripb = abs(salp1a - salp1) + (calp1a - calp1) < tolb
-					|| abs(salp1 - salp1b) + (calp1 - calp1b) < tolb
+					tripb = (
+						abs(salp1a - salp1) + (calp1a - calp1) < tolb ||
+						abs(salp1 - salp1b) + (calp1 - calp1b) < tolb
+					)
 					numit += 1
 				}
 
+				// TODO: capabilities
 				let r2 = lengths(eps, sig12,
 								 ssig1, csig1, dn1,
 								 ssig2, csig2, dn2,
 								 cbet1, cbet2, &Ca)
 				s12x = r2.s12b * b
 				m12x = r2.m12b * b
-				M12 = r2.M12
-				M21 = r2.M21
+
+				if capabilities.contains(.geodesicScale) {
+					M12 = r2.M12
+					M21 = r2.M21
+				}
 				a12 = sig12 / degree
 
-				let sdomg12 = sin(domg12), cdomg12 = cos(domg12)
-				somg12 = slam12 * cdomg12 - clam12 * sdomg12
-				comg12 = clam12 * cdomg12 + slam12 * sdomg12
+				if (capabilities.contains(.area)) {
+					let sdomg12 = sin(domg12)
+					let cdomg12 = cos(domg12)
+					somg12 = slam12 * cdomg12 - clam12 * sdomg12
+					comg12 = clam12 * cdomg12 + slam12 * sdomg12
+				}
 			}
 		}
 
-		s12 = 0 + s12x
-		m12 = 0 + m12x
+		if (capabilities.contains(.distance)) {
+			s12 = 0 + s12x
+		}
+		
+		if (capabilities.contains(.reducedLength)) {
+			m12 = 0 + m12x
+		}
 
 		// Area calculation
-		let salp0 = salp1 * cbet1
-		let calp0 = hypot(calp1, salp1 * sbet1)
+		if (capabilities.contains(.area)) {
+			// From Lambda12: sin(alp1) * cos(bet1) = sin(alp0)
+			let salp0 = salp1 * cbet1
+			let calp0 = hypot(calp1, salp1 * sbet1) // calp0 > 0
 
-		if calp0 != 0 && salp0 != 0 {
-			var ssig1L = sbet1, csig1L = calp1 * cbet1
-			var ssig2L = sbet2, csig2L = calp2 * cbet2
-			let k2L = sq(calp0) * ep2
-			let epsL = k2L / (2 * (1 + sqrt(1 + k2L)) + k2L)
-			let A4 = sq(equatorialRadius) * calp0 * salp0 * e2
-			norm(&ssig1L, &csig1L)
-			norm(&ssig2L, &csig2L)
-			c4f(epsL, &Ca)
-			let B41 = sinCosSeries(false, ssig1L, csig1L, Ca, nC4)
-			let B42 = sinCosSeries(false, ssig2L, csig2L, Ca, nC4)
-			S12 = A4 * (B42 - B41)
-		} else {
-			S12 = 0
-		}
-
-		if !meridian && somg12 == 2 {
-			somg12 = sin(omg12)
-			comg12 = cos(omg12)
-		}
-
-		let alp12: Double
-		if !meridian && comg12 > -0.7071 && sbet2 - sbet1 < 1.75 {
-			let domg12v = 1 + comg12, dbet1 = 1 + cbet1, dbet2 = 1 + cbet2
-			alp12 = 2 * atan2(somg12 * (sbet1 * dbet2 + sbet2 * dbet1),
-							  domg12v * (sbet1 * sbet2 + dbet1 * dbet2))
-		} else {
-			var salp12 = salp2 * calp1 - calp2 * salp1
-			var calp12 = calp2 * calp1 + salp2 * salp1
-			if salp12 == 0 && calp12 < 0 {
-				salp12 = tiny * calp1
-				calp12 = -1
+			if calp0 != 0 && salp0 != 0 {
+				// From Lambda12: tan(bet) = tan(sig) * cos(alp)
+				// TODO: why are these appended with L?
+				var ssig1L = sbet1
+				var csig1L = calp1 * cbet1
+				var ssig2L = sbet2
+				var csig2L = calp2 * cbet2
+				let k2L = sq(calp0) * ep2
+				let epsL = k2L / (2 * (1 + sqrt(1 + k2L)) + k2L)
+				// Multiplier = a^2 * e^2 * cos(alpha0) * sin(alpha0).
+				let A4 = sq(equatorialRadius) * calp0 * salp0 * e2
+				norm(&ssig1L, &csig1L)
+				norm(&ssig2L, &csig2L)
+				c4f(epsL, &Ca)
+				let B41 = sinCosSeries(false, ssig1L, csig1L, Ca, nC4)
+				let B42 = sinCosSeries(false, ssig2L, csig2L, Ca, nC4)
+				S12 = A4 * (B42 - B41)
+			} else {
+				// Avoid problems with indeterminate sig1, sig2 on equator
+				S12 = 0
 			}
-			alp12 = atan2(salp12, calp12)
-		}
-		S12 += c2 * alp12
-		S12 *= swapp * Double(lonsignI) * latsign
-		S12 += 0
 
-		var salp1Out = salp1, calp1Out = calp1
-		var salp2Out = salp2, calp2Out = calp2
+			if !meridian && somg12 == 2 {
+				somg12 = sin(omg12)
+				comg12 = cos(omg12)
+			}
+
+			let alp12: Double
+			if (
+				!meridian &&
+				// omg12 < 3/4 * pi
+				comg12 > -0.7071 && // Long difference not too big
+				sbet2 - sbet1 < 1.75 // Lat difference not too big
+			) {
+				/* Use tan(Gamma/2) = tan(omg12/2)
+				 * * (tan(bet1/2)+tan(bet2/2))/(1+tan(bet1/2)*tan(bet2/2))
+				 * with tan(x/2) = sin(x)/(1+cos(x)) */
+				let domg12v = 1 + comg12
+				let dbet1 = 1 + cbet1
+				let dbet2 = 1 + cbet2
+				alp12 = 2 * atan2(somg12 * (sbet1 * dbet2 + sbet2 * dbet1),
+								  domg12v * (sbet1 * sbet2 + dbet1 * dbet2))
+			} else {
+				// alp12 = alp2 - alp1, used in atan2 so no need to normalize
+				var salp12 = salp2 * calp1 - calp2 * salp1
+				var calp12 = calp2 * calp1 + salp2 * salp1
+				/* The right thing appears to happen if alp1 = +/-180 and alp2 = 0, viz
+				 * salp12 = -0 and alp12 = -180.  However this depends on the sign
+				 * being attached to 0 correctly.  The following ensures the correct
+				 * behavior. */
+				if salp12 == 0 && calp12 < 0 {
+					salp12 = tiny * calp1
+					calp12 = -1
+				}
+				alp12 = atan2(salp12, calp12)
+			}
+			S12 += c2 * alp12
+			S12 *= swapp * lonsign * latsign
+			S12 += 0
+		}
+
+		var salp1Out = salp1
+		var calp1Out = calp1
+		var salp2Out = salp2
+		var calp2Out = calp2
+		/* Convert calp, salp to azimuth accounting for lonsign, swapp, latsign. */
 		if swapp < 0 {
 			swap(&salp1Out, &salp2Out)
 			swap(&calp1Out, &calp2Out)
 			swap(&M12, &M21)
 		}
-		salp1Out *= swapp * Double(lonsignI)
+		salp1Out *= swapp * lonsign
 		calp1Out *= swapp * latsign
-		salp2Out *= swapp * Double(lonsignI)
+		salp2Out *= swapp * lonsign
 		calp2Out *= swapp * latsign
 
 		return (a12, s12, salp1Out, calp1Out, salp2Out, calp2Out, m12, M12, M21, S12)
 	}
-
 }
 
 extension Geodesic {
@@ -1126,14 +1261,13 @@ extension Geodesic {
 		longitude1: Double,
 		latitude2: Double,
 		longitude2: Double,
-		// TODO: is ALL_CAPS the right default here?
-		capabilities: Set<Capability> = ALL_CAPS
+		capabilities: Set<Capability> = Set(Capability.allCases)
 	) -> GeneralInverseGeodesicResult {
 		let r = geninverseInt(latitude1, longitude1, latitude2, longitude2, capabilities: capabilities)
 		return GeneralInverseGeodesicResult(
 			distance: r.s12,
-			azimuth1: atan2d(r.salp1, r.calp1),
-			azimuth2: atan2d(r.salp2, r.calp2),
+			azimuth1: capabilities.contains(.azimuth) ? atan2d(r.salp1, r.calp1) : .nan,
+			azimuth2: capabilities.contains(.azimuth) ? atan2d(r.salp2, r.calp2) : .nan,
 			m12: r.m12,
 			M12: r.M12,
 			M21: r.M21,
@@ -1163,7 +1297,8 @@ extension Geodesic {
 		latitude1: Double,
 		longitude1: Double,
 		latitude2: Double,
-		longitude2: Double
+		longitude2: Double,
+		capabilities: Set<Capability> = [.azimuth, .distance]
 	) -> InverseGeodesicResult {
 		return InverseGeodesicResult(
 			generalInverse(
@@ -1171,7 +1306,7 @@ extension Geodesic {
 				longitude1: longitude1,
 				latitude2: latitude2,
 				longitude2: longitude2,
-				capabilities: [.distance, .azimuth]
+				capabilities: capabilities
 			)
 		)
 	}
@@ -1252,7 +1387,8 @@ extension Geodesic {
 		latitude: Double,
 		longitude: Double,
 		azimuth: Double,
-		distance: Double
+		distance: Double,
+		flags: Set<Flag>? = nil
 	) -> DirectGeodesicResult {
 		DirectGeodesicResult(
 			generalDirect(
@@ -1260,14 +1396,14 @@ extension Geodesic {
 				longitude: longitude,
 				azimuth: azimuth,
 				distance: distance,
-				flags: [.longitudeUnroll],
-				capabilities: [.latitude, .longitude, .azimuth]
+				flags: flags,
+				capabilities: [.latitude, .longitude, .azimuth, .distanceIn]
 			)
 		)
 	}
 }
 
-private struct Line {
+struct Line {
 	let latitude: Double // lat1
 	let longitude: Double // lon1
 	let azimuth: Double // azi1
@@ -1307,7 +1443,14 @@ private struct Line {
 
 	let capabilities: Set<Capability>
 
-	init(geodesic: Geodesic, latitude: Double, longitude: Double, azimuth: Double, capabilities: Set<Capability> = ALL_CAPS) {
+	init(
+		geodesic: Geodesic,
+		latitude: Double,
+		longitude: Double,
+		azimuth: Double,
+		// If no capabilities are supplied, assume the standard direct calculation.
+		capabilities: Set<Capability> = [.distanceIn, .longitude, .latitude, .azimuth]
+	) {
 		self.azimuth = angNormalize(azimuth)
 
 		let sincos = sincosd(angRound(self.azimuth))
@@ -1387,29 +1530,336 @@ private struct Line {
 			self.B41 = sinCosSeries(false, self.ssig1, self.csig1, self.C4a, nC4)
 		}
 
-		// TODO: these are set to NaN in the original. Should I set them to nil or something instead?
-		self.arcLength = 0
-		self.distance = 0
+		self.arcLength = .nan
+		self.distance = .nan
 	}
 }
 
 /**
  * The struct for accumulating information about a geodesic polygon.  This is
- * used for computing the perimeter and area of a polygon.  This must be
- * initialized by geod_polygon_init() before use.
- **********************************************************************/
-private struct Polygon {
+ * used for computing the perimeter and area of a polygon.
+ * */
+internal class Polygon {
+	var startPoint: Point?
+	var currentPoint: Point?
+
+	var area: [Double] = []
+	var perimeter: [Double] = []
+
+	let isPolyline: Bool
+	var crossings: Int = 0
+
+	var pointCount: UInt = 0
+
+	init(isPolyline: Bool) {
+		self.isPolyline = isPolyline
+		self.area = [0, 0]
+		self.perimeter = [0, 0]
+	}
+
+	init(isPolyline: Bool, points: [Point], geodesic: Geodesic) {
+		self.isPolyline = isPolyline
+		self.area = [0, 0]
+		self.perimeter = [0, 0]
+
+		for point in points {
+			self.addPoint(geod: geodesic, point: point)
+		}
+	}
+
+	func accAdd(_ value: Double, acc: inout [Double]) {
+		// Add value to an accumulator
+
+		let (z, u) = sum(value, acc[1])
+		(acc[0], acc[1]) = sum(z, acc[0])
+
+		if (acc[0] == 0) {
+			acc[0] = u
+		} else {
+			acc[1] = acc[1] + u
+		}
+	}
+
+	func accSum(_ value: Double, acc: [Double]) -> Double {
+		// Return accumulator + y, but don't add to the accumulator.
+		var t = acc
+		accAdd(value, acc: &t)
+		return t[0]
+	}
+
+	func accRem(_ value: Double, acc: inout [Double]) {
+		acc[0] = remainder(acc[0], value)
+		accAdd(0, acc: &acc)
+	}
+
+	func accNeg(_ acc: inout [Double]) {
+		acc[0] = -acc[0]
+		acc[1] = -acc[1]
+	}
+
+	func transit(_ lon1: Double, _ lon2: Double) -> Int {
+		let (lon12, _) = angDiff(lon1, lon2)
+		let lon1 = angNormalize(lon1)
+		let lon2 = angNormalize(lon2)
+
+		if lon12 > 0 && ((lon1 < 0 && lon2 >= 0) || (lon1 > 0 && lon2 == 0)) {
+			return 1
+		} else if lon12 < 0 && lon1 >= 0 && lon2 < 0 {
+			return -1
+		} else {
+			return 0
+		}
+	}
+
+	func transitDirect(_ lon1: Double, _ lon2: Double) -> Int {
+		// Compute exactly the parity of int(floor(lon2 / 360)) - int(floor(lon1 / 360))
+		let lon1rem = remainder(lon1, 2.0 * td)
+		let lon2rem = remainder(lon2, 2.0 * td)
+		return (
+			(lon2rem >= 0 && lon2rem < td ? 0 : 1) -
+			(lon1rem >= 0 && lon1rem < td ? 0 : 1)
+		)
+	}
+
+	func areaReduceA(_ area0: Double, areaAcc: inout [Double], crossings: Int, reverse: Bool, sign: Bool) -> Double {
+		accRem(area0, acc: &areaAcc)
+
+		if crossings & 1 == 1 {
+			accAdd(
+				(areaAcc[0] < 0 ? 1 : -1) * area0 / 2,
+				acc: &areaAcc
+			)
+		}
+
+		// Area is computed clockwise. If !reverse, convert to counter-clockwise convention.
+		if !reverse {
+			accNeg(&areaAcc)
+		}
+
+		// If sign is acceptable, put area in [-area0/2, area0/2], else put area in [0, area0)
+		if (sign) {
+			if (areaAcc[0] > (area0 / 2)) {
+				accAdd(-area0, acc: &areaAcc)
+			} else if (areaAcc[0] <= -(area0 / 2)) {
+				accAdd(area0, acc: &areaAcc)
+			}
+		} else {
+			if (areaAcc[0] >= area0) {
+				accAdd(-area0, acc: &areaAcc)
+			} else if (areaAcc[0] < 0) {
+				accAdd(+area0, acc: &areaAcc)
+			}
+		}
+
+		return 0 + areaAcc[0]
+	}
+
+	func areaReduceB(_ area: Double, _ area0: Double, crossings: Int, reverse: Bool, sign: Bool) -> Double {
+		var area = remainder(area, area0)
+		if crossings & 1 == 1 {
+			area += (area < 0 ? 1 : -1) * area0 / 2
+		}
+		if !reverse {
+			area *= -1
+		}
+		if sign {
+			if area > (area0 / 2) {
+				area -= area0
+			} else if area <= -(area0 / 2) {
+				area += area0
+			}
+		} else {
+			if area >= area0 {
+				area -= area0
+			} else if area < 0 {
+				area += area0
+			}
+		}
+
+		return 0 + area
+	}
+
+	func addPoint(geod: Geodesic, point: Point) {
+		if let currentPoint = currentPoint {
+			let inverse = geod.generalInverse(
+				latitude1: currentPoint.latitude,
+				longitude1: currentPoint.longitude,
+				latitude2: point.latitude,
+				longitude2: point.longitude,
+				capabilities: [.distance, .area]
+				// TODO: remove area if polyline?
+			)
+
+			accAdd(inverse.distance, acc: &perimeter)
+
+			if !isPolyline {
+				accAdd(inverse.areaUnder, acc: &area)
+
+				crossings += transit(currentPoint.longitude, point.longitude)
+			}
+
+			self.currentPoint = point
+		} else {
+			startPoint = point
+			currentPoint = point
+		}
+
+		pointCount += 1
+	}
+
+	func testPoint(geod: Geodesic, point: Point, reverse: Bool, sign: Bool) -> (area: Double, perimeter: Double) {
+		guard let startPoint = startPoint, let currentPoint = currentPoint else {
+			return (0, 0)
+		}
+
+		var perimeter = perimeter[0]
+		var tempSum = isPolyline ? 0 : area[0]
+		var crossings = self.crossings
+
+		for i in 0..<(isPolyline ? 1 : 2) {
+			let inverse = geod.generalInverse(
+				latitude1: i == 0 ? currentPoint.latitude : point.latitude,
+				longitude1: i == 0 ? currentPoint.longitude : point.longitude,
+				latitude2: i != 0 ? startPoint.latitude: point.latitude,
+				longitude2: i != 0 ? startPoint.longitude : point.longitude,
+				// TODO: turn off area capability if polyline?
+			)
+
+			perimeter += inverse.distance
+
+			if !isPolyline {
+				tempSum += inverse.areaUnder
+				crossings += transit(
+					i == 0 ? currentPoint.longitude : point.longitude,
+					i != 0 ? startPoint.longitude : point.longitude
+				)
+			}
+		}
+
+		if isPolyline {
+			return (0, perimeter)
+		}
+
+		let area = areaReduceB(
+			tempSum,
+			4 * .pi * geod.c2,
+			crossings: crossings,
+			reverse: reverse,
+			sign: sign
+		)
+
+		return (area, perimeter)
+	}
+
+	func addEdge(geod: Geodesic, azimuth: Double, distance: Double) {
+		guard let currentPoint = currentPoint else {
+			logger.warning("Attempted to add an edge to a polygon that does not yet have a starting point")
+			return
+		}
+		let direct = geod.generalDirect(
+			latitude: currentPoint.latitude,
+			longitude: currentPoint.longitude,
+			azimuth: azimuth,
+			distance: distance,
+			flags: [.longitudeUnroll],
+			capabilities: [.distance, .distanceIn, .latitude, .longitude, .area]
+		)
+
+		accAdd(distance, acc: &self.perimeter)
+
+		if !isPolyline {
+			accAdd(direct.areaUnder, acc: &self.area)
+			crossings += transitDirect(currentPoint.longitude, direct.longitude)
+		}
+
+		self.currentPoint = Point(latitude: direct.latitude, longitude: direct.longitude)
+		self.pointCount += 1
+	}
+
+	func testEdge(geod: Geodesic, azimuth: Double, distance: Double, reverse: Bool, sign: Bool) -> (area: Double, perimeter: Double) {
+		guard let startPoint = startPoint, let currentPoint = currentPoint else {
+			return (.nan, .nan)
+		}
+
+		var perimeter = self.perimeter[0] + distance
+		if isPolyline {
+			return (0, perimeter)
+		}
+
+		var tempSum = area[0]
+		var crossings = self.crossings
+
+		let direct = geod.generalDirect(
+			latitude: currentPoint.latitude,
+			longitude: currentPoint.longitude,
+			azimuth: azimuth,
+			distance: distance,
+			flags: [.longitudeUnroll],
+			capabilities: Set(Capability.allCases)
+			// TODO: turn off area capability if polyline?
+		)
+		tempSum += direct.areaUnder
+		crossings += transitDirect(currentPoint.longitude, direct.longitude)
+
+		let inverse = geod.generalInverse(
+			latitude1: direct.latitude,
+			longitude1: direct.longitude,
+			latitude2: startPoint.latitude,
+			longitude2: startPoint.longitude
+		)
+
+		perimeter += inverse.distance
+		tempSum += inverse.areaUnder
+		crossings += transit(direct.longitude, startPoint.longitude)
+
+		let area = areaReduceB(
+			tempSum,
+			4 * .pi * geod.c2,
+			crossings: crossings,
+			reverse: reverse,
+			sign: sign
+		)
+
+		return (area, perimeter)
+	}
+
+	func compute(geod: Geodesic, reverse: Bool, sign: Bool) -> (area: Double, perimeter: Double) {
+		guard self.pointCount >= 2, let startPoint = startPoint, let currentPoint = currentPoint else {
+			return (0, 0)
+		}
+
+		if isPolyline {
+			return (0, perimeter[0])
+		}
+
+		let inverse = geod.generalInverse(
+			latitude1: currentPoint.latitude,
+			longitude1: currentPoint.longitude,
+			latitude2: startPoint.latitude,
+			longitude2: startPoint.longitude,
+			capabilities: [.distance, .area]
+		)
+
+		let perimeter = accSum(inverse.distance, acc: perimeter)
+
+		var t = self.area
+		accAdd(inverse.areaUnder, acc: &t)
+
+		let area = areaReduceA(
+			4 * .pi * geod.c2,
+			areaAcc: &t,
+			crossings: self.crossings + transit(currentPoint.longitude, startPoint.longitude),
+			reverse: reverse,
+			sign: sign
+		)
+
+		return (area, perimeter)
+	}
+}
+
+public struct Point {
 	let latitude: Double
 	let longitude: Double
-
-	let lat0: Double
-	let long0: Double
-	let area: [Double]
-	let perimeter: [Double]
-	let polyline: Int
-	let crossings: Int
-
-	var pointCount: UInt
 }
 
 // MARK: - Series helpers
