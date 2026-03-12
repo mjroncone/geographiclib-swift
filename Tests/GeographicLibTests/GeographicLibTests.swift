@@ -563,7 +563,7 @@ struct GeodesicTests {
 		let caps: Set<Capability> = Set(Capability.allCases)
 		let geod = Geodesic.WGS84
 
-		let line = Line(geodesic: geod, latitude: 0, longitude: 0, azimuth: 0, capabilities: caps)
+		let line = GeodesicLine(geodesic: geod, latitude: 0, longitude: 0, azimuth: 0, capabilities: caps)
 //		let line = geod.inverseline(
 //			latitude1: 30,
 //			longitude1: -0.000000000000000001,
@@ -602,7 +602,7 @@ struct GeodesicTests {
 		let flags: Set<Flag> = [.longitudeUnroll]
 		let geod = Geodesic.WGS84
 
-		let line = Line(geodesic: geod, latitude: 0, longitude: 0, azimuth: 0, capabilities: [])
+		let line = GeodesicLine(geodesic: geod, latitude: 0, longitude: 0, azimuth: 0, capabilities: [])
 //		let line = geod.inverseline(
 //			latitude1: -5,
 //			longitude1: -0.000000000000002,
@@ -627,7 +627,7 @@ struct GeodesicTests {
 		/* Check that DirectLine sets s13. */
 		let geod = Geodesic.WGS84
 
-		let line = Line(geodesic: geod, latitude: 1, longitude: 2, azimuth: 45, capabilities: [])
+		let line = GeodesicLine(geodesic: geod, latitude: 1, longitude: 2, azimuth: 45, capabilities: [])
 //		let line = geod.directline(latitude1: 1, longitude1: 2, azimuth: 45, s12_a12: 1e7, flags: [])
 		let result = geod.genposition(line: line, s12_a12: 0.5 * line.distance, flags: [])
 
@@ -655,12 +655,12 @@ struct GeodesicTests {
 
 
 	func planimeter(_ geod: Geodesic, points: [Point]) -> (area: Double, perimeter: Double) {
-		let polygon = Polygon(isPolyline: false, points: points, geodesic: geod)
+		let polygon = GeodesicPolygon(isPolyline: false, points: points, geodesic: geod)
 		return polygon.compute(geod: geod, reverse: false, sign: true)
 	}
 
 	func polylength(_ geod: Geodesic, points: [Point]) -> Double {
-		let polygon = Polygon(isPolyline: true, points: points, geodesic: geod)
+		let polygon = GeodesicPolygon(isPolyline: true, points: points, geodesic: geod)
 		return polygon.compute(geod: geod, reverse: false, sign: true).perimeter
 	}
 
@@ -774,7 +774,7 @@ struct GeodesicTests {
 		#expect(isEqual(result.areaUnder, 127516405431022.0, precision: 0.5))
 
 		/* An incapable line which can't take distance as input */
-		let line = Line(geodesic: geod, latitude: 1, longitude: 2, azimuth: 90, capabilities: [.latitude])
+		let line = GeodesicLine(geodesic: geod, latitude: 1, longitude: 2, azimuth: 90, capabilities: [.latitude])
 		let result2 = geod.genposition(line: line, s12_a12: 1000, flags: [])
 		#expect(result2.arcLength.isNaN)
 	}
@@ -1046,7 +1046,7 @@ struct GeodesicTests {
 		let a0 = 510065621724088.5093  /* ellipsoid area */
 
 		let geod = Geodesic.WGS84
-		let polygon = Polygon(isPolyline: false)
+		let polygon = GeodesicPolygon(isPolyline: false)
 		polygon.addPoint(geod: geod, point: points[0])
 		polygon.addPoint(geod: geod, point: points[1])
 
@@ -1100,7 +1100,7 @@ struct GeodesicTests {
 		/* Coverage tests, includes Planimeter19 - Planimeter20 (degenerate
 		 * polygons) + extra cases.  */
 		let geod = Geodesic.WGS84
-		let polygon = Polygon(isPolyline: false)
+		let polygon = GeodesicPolygon(isPolyline: false)
 		var result = polygon.compute(geod: geod, reverse: false, sign: true)
 		#expect(result.area == 0)
 		#expect(result.perimeter == 0)
@@ -1118,7 +1118,7 @@ struct GeodesicTests {
 		#expect(result.area == 0)
 		#expect(result.perimeter == 0)
 
-		let polylinePolygon = Polygon(isPolyline: true)
+		let polylinePolygon = GeodesicPolygon(isPolyline: true)
 		var polyResult = polylinePolygon.compute(geod: geod, reverse: false, sign: true)
 		#expect(polyResult.perimeter == 0)
 
@@ -1154,7 +1154,7 @@ struct GeodesicTests {
 		let lat = 45.0
 
 		let geod = Geodesic.WGS84
-		let polygon = Polygon(isPolyline: false)
+		let polygon = GeodesicPolygon(isPolyline: false)
 
 		polygon.addPoint(geod: geod, point: Point(latitude: lat, longitude: 60))
 		polygon.addPoint(geod: geod, point: Point(latitude: lat, longitude: 180))
@@ -1202,7 +1202,7 @@ struct GeodesicTests {
 	func testPlanimeter29() {
 		/* Check fix to transitdirect vs transit zero handling inconsistency */
 		let geod = Geodesic.WGS84
-		let polygon = Polygon(isPolyline: false)
+		let polygon = GeodesicPolygon(isPolyline: false)
 		polygon.addPoint(geod: geod, point: Point(latitude: 0, longitude: 0))
 		polygon.addEdge(geod: geod, azimuth: 90, distance: 1000)
 		polygon.addEdge(geod: geod, azimuth: 0, distance: 1000)

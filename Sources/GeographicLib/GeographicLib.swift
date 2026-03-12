@@ -19,8 +19,8 @@ private let nC3x = (nC3 * (nC3 - 1)) / 2
 private let nC4 = GEODESIC_ORDER
 private let nC4x = (nC4 * (nC4 + 1)) / 2
 private let nC = GEODESIC_ORDER + 1
-private let maxit1  = 20
-private let maxit2  = maxit1 + Int(Double.significandBitCount) + 10
+private let maxit1 = 20
+private let maxit2 = maxit1 + Int(Double.significandBitCount) + 10
 
 private let tiny = sqrt(Double.leastNormalMagnitude)
 private let tol0 = Double.ulpOfOne
@@ -48,22 +48,19 @@ public enum Capability: Sendable, CaseIterable {
 }
 
 public let ALL_CAPS = Set<Capability>(Capability.allCases)
-public let NO_CAPS = Set<Capability>()
 
 let CAP_C1 = Set<Capability>([.distance, .distanceIn, .reducedLength, .geodesicScale]) // 1U<<0
 let CAP_C1P = Set<Capability>([.distanceIn]) // 1U<<1
 let CAP_C2 = Set<Capability>([.reducedLength, .geodesicScale]) // 1U<<2
 let CAP_C3 = Set<Capability>([.longitude]) // 1U<<3
 let CAP_C4 = Set<Capability>([.area]) // 1U << 4
-// CAP_ALL 0x1FU
-// OUT_ALL = 0x7F80U
 
 public enum Flag {
 	case arcMode
 	case longitudeUnroll
 }
 
-// MARK: - Math helpers
+// MARK: math helpers
 
 private func sq(_ x: Double) -> Double {
 	pow(x, 2)
@@ -237,6 +234,125 @@ private func atan2d(_ y: Double, _ x: Double) -> Double {
 	return ang
 }
 
+// MARK: Series helpers
+
+/// sinCosSeries evaluates a trigonometric series using Clenshaw summation.
+private func sinCosSeries(_ sinp: Bool, _ sinx: Double, _ cosx: Double,
+						  _ c: [Double], _ n: Int) -> Double {
+	guard c.count > 0 else {
+		logger.error("sinCosSeries called with empty coefficient array")
+		return 0
+	}
+	/* Evaluate
+	 * y = sinp ? sum(c[i] * sin( 2*i    * x), i, 1, n) :
+	 *            sum(c[i] * cos((2*i+1) * x), i, 0, n-1)
+	 * using Clenshaw summation.  N.B. c[0] is unused for sin series
+	 * Approx. operation count = (n + 5) multiplications and (2 * n + 2) additions
+	 */
+
+	var idx = n
+	if sinp {
+		idx += 1
+	}
+
+	let ar = 2 * (cosx - sinx) * (cosx + sinx)
+
+	var sum1 = 0.0
+	if (n & 1) != 0 {
+		idx -= 1
+		sum1 = c[idx]
+	}
+	var sum2 = 0.0
+
+	var nn = n / 2
+	while nn > 0 {
+		nn -= 1
+		idx -= 1
+		sum2 = ar * sum1 - sum2 + c[idx]
+
+		idx -= 1
+		sum1 = ar * sum2 - sum1 + c[idx]
+	}
+
+	return sinp ? 2 * sinx * cosx * sum1 : cosx * (sum1 - sum2)
+}
+
+private func a1m1f(_ eps: Double) -> Double {
+	let coeff: [Double] = [1, 4, 64, 0, 256]
+	let m = nA1 / 2
+	let t = polyval(m, coeff, 0, sq(eps)) / coeff[m + 1]
+	return (t + eps) / (1 - eps)
+}
+
+private func c1f(_ eps: Double, _ c: inout [Double]) {
+	let coeff: [Double] = [
+		-1, 6, -16, 32,
+		 -9, 64, -128, 2048,
+		 9, -16, 768,
+		 3, -5, 512,
+		 -7, 1280,
+		 -7, 2048,
+	]
+	let eps2 = sq(eps)
+	var d = eps
+	var o = 0
+	for l in 1...nC1 {
+		let m = (nC1 - l) / 2
+		c[l] = d * polyval(m, coeff, o, eps2) / coeff[o + m + 1]
+		o += m + 2
+		d *= eps
+	}
+}
+
+private func c1pf(_ eps: Double, _ c: inout [Double]) {
+	let coeff: [Double] = [
+		205, -432, 768, 1536,
+		4005, -4736, 3840, 12288,
+		-225, 116, 384,
+		-7173, 2695, 7680,
+		3467, 7680,
+		38081, 61440,
+	]
+	let eps2 = sq(eps)
+	var d = eps
+	var o = 0
+	for l in 1...nC1p {
+		let m = (nC1p - l) / 2
+		c[l] = d * polyval(m, coeff, o, eps2) / coeff[o + m + 1]
+		o += m + 2
+		d *= eps
+	}
+}
+
+private func a2m1f(_ eps: Double) -> Double {
+	let coeff: [Double] = [-11, -28, -192, 0, 256]
+	let m = nA2 / 2
+	let t = polyval(m, coeff, 0, sq(eps)) / coeff[m + 1]
+	return (t - eps) / (1 + eps)
+}
+
+private func c2f(_ eps: Double, _ c: inout [Double]) {
+	let coeff: [Double] = [
+		1, 2, 16, 32,
+		35, 64, 384, 2048,
+		15, 80, 768,
+		7, 35, 512,
+		63, 1280,
+		77, 2048,
+	]
+	let eps2 = sq(eps)
+	var d = eps
+	var o = 0
+	for l in 1...nC2 {
+		let m = (nC2 - l) / 2
+		c[l] = d * polyval(m, coeff, o, eps2) / coeff[o + m + 1]
+		o += m + 2
+		d *= eps
+	}
+}
+
+// MARK: Public API
+
 public struct Geodesic: Sendable {
 	let equatorialRadius: Double  // a
 	let flattening: Double        // f
@@ -403,7 +519,7 @@ public struct Geodesic: Sendable {
 	}
 
 	internal func genposition(
-		line: Line,
+		line: GeodesicLine,
 		s12_a12: Double,
 		flags: Set<Flag>,
 	) -> GeneralDirectGeodesicResult {
@@ -566,27 +682,20 @@ public struct Geodesic: Sendable {
 		}
 
 		return GeneralDirectGeodesicResult(
-			//			if ((outmask & GEOD_LATITUDE) && plat2)
-			latitude: lat2,
-			//			if ((outmask & GEOD_LONGITUDE) && plon2)
-			longitude: lon2,
-			//			if ((outmask & GEOD_AZIMUTH) && pazi2)
-			azimuth: azi2,
-			//		if ((outmask & GEOD_DISTANCE) && ps12)
-			distance: s12,
-			//		if ((outmask & GEOD_REDUCEDLENGTH) && pm12)
-			m12: m12,
-			//		if (outmask & GEOD_GEODESICSCALE) {
-			M12: M12,
-			M21: M21,
-			//		if ((outmask & GEOD_AREA) && pS12)
-			areaUnder: S12,
+			latitude: line.capabilities.contains(.latitude) ? lat2 : .nan,
+			longitude: line.capabilities.contains(.longitude) ? lon2 : .nan,
+			azimuth: line.capabilities.contains(.azimuth) ? azi2 : .nan,
+			distance: line.capabilities.contains(.distance) ? s12 : .nan,
+			m12: line.capabilities.contains(.reducedLength) ? m12 : .nan,
+			M12: line.capabilities.contains(.geodesicScale) ? M12 : .nan,
+			M21: line.capabilities.contains(.geodesicScale) ? M21 : .nan,
+			areaUnder: line.capabilities.contains(.area) ? S12 : .nan,
 			arcLength: flags.contains(.arcMode) ? s12_a12 : sig12 / degree
 		)
 	}
 
 	func polygonArea(points: [Point]) -> (area: Double, perimeter: Double) {
-		let polygon = Polygon(isPolyline: false, points: points, geodesic: self)
+		let polygon = GeodesicPolygon(isPolyline: false, points: points, geodesic: self)
 		return polygon.compute(geod: self, reverse: false, sign: true)
 	}
 
@@ -758,7 +867,6 @@ public struct Geodesic: Sendable {
 		return (-1, salp1, calp1, salp2, calp2, dnm)
 	}
 
-	// TODO: verify what this function is doing
 	private func lambda12(
 		_ sbet1: Double, _ cbet1: Double, _ dn1: Double,
 		_ sbet2: Double, _ cbet2: Double, _ dn2: Double,
@@ -772,33 +880,63 @@ public struct Geodesic: Sendable {
 		  domg12: Double, dlam12: Double) {
 
 		var calp1 = calp1In
-		if sbet1 == 0 && calp1 == 0 { calp1 = -tiny }
+		if sbet1 == 0 && calp1 == 0 {
+			// Break degeneracy of equatorial line. This case has already been handled.
+			calp1 = -tiny
+		}
 
+		// sin(alp1) * cos(bet1) = sin(alp0)
 		let salp0 = salp1 * cbet1
+		// calp0 > 0
 		let calp0 = hypot(calp1, salp1 * sbet1)
 
-		var ssig1 = sbet1, somg1 = salp0 * sbet1
-		var csig1 = calp1 * cbet1, comg1 = csig1
+		// tan(bet1) = tan(sig1) * cos(alp1)
+		// tan(omg1) = sin(alp0) * tan(sig1) = tan(omg1) = tan(alp1 * sin(bet1)
+		var ssig1 = sbet1
+		let somg1 = salp0 * sbet1
+		var csig1 = calp1 * cbet1
+		let comg1 = csig1
 		norm(&ssig1, &csig1)
 
+		/* Enforce symmetries in the case abs(bet2) = -bet1. Need to be
+		 * careful about this case, since this can yield singularities in
+		 * the Newton iteration.
+		 * sin(alp2) * cos(bet2) = sin(alp0)
+		 */
 		let salp2 = cbet2 != cbet1 ? salp0 / cbet2 : salp1
+		/* calp2 = sqrt(1 - sq(salp2))
+		 *       = sqrt(sq(calp0) - sq(sbet2)) / cbet2
+		 * and subst for calp0 and rearrange to give (choose positive sqrt
+		 * to give alp2 in [0, pi/2]).
+		 */
 		let calp2: Double
 		if cbet2 != cbet1 || abs(sbet2) != -sbet1 {
-			calp2 = sqrt(sq(calp1 * cbet1) +
-						 (cbet1 < -sbet1
-						  ? (cbet2 - cbet1) * (cbet1 + cbet2)
-						  : (sbet1 - sbet2) * (sbet1 + sbet2))) / cbet2
+			calp2 = sqrt(
+				sq(calp1 * cbet1) + (
+				 cbet1 < -sbet1 ?
+				 (cbet2 - cbet1) * (cbet1 + cbet2) :
+				 (sbet1 - sbet2) * (sbet1 + sbet2)
+				)
+			) / cbet2
 		} else {
 			calp2 = abs(calp1)
 		}
 
-		var ssig2 = sbet2, somg2 = salp0 * sbet2
-		var csig2 = calp2 * cbet2, comg2 = csig2
+		/* tan(bet2) = tan(sig2) * cos(alp2)
+		 * tan(omg2) = sin(alp0) * tan(sig2). */
+		var ssig2 = sbet2
+		let somg2 = salp0 * sbet2
+		var csig2 = calp2 * cbet2
+		let comg2 = csig2
 		norm(&ssig2, &csig2)
 
-		let sig12 = atan2(max(0.0, csig1 * ssig2 - ssig1 * csig2) + 0,
-						  csig1 * csig2 + ssig1 * ssig2)
+		// sig12 = sig2 - sig1, limit to [0, pi]
+		let sig12 = atan2(
+			max(0.0, csig1 * ssig2 - ssig1 * csig2) + 0,
+			csig1 * csig2 + ssig1 * ssig2
+		)
 
+		// omg12 = omg2 - omg1, limit to [0, pi]
 		let somg12 = max(0.0, comg1 * somg2 - somg1 * comg2) + 0
 		let comg12 = comg1 * comg2 + somg1 * somg2
 		let eta = atan2(somg12 * clam120 - comg12 * slam120,
@@ -807,8 +945,8 @@ public struct Geodesic: Sendable {
 		let k2 = sq(calp0) * ep2
 		let eps = k2 / (2 * (1 + sqrt(1 + k2)) + k2)
 		c3f(eps, &Ca)
-		let B312 = sinCosSeries(true, ssig2, csig2, Ca, nC3 - 1)
-		- sinCosSeries(true, ssig1, csig1, Ca, nC3 - 1)
+		let B312 = sinCosSeries(true, ssig2, csig2, Ca, nC3 - 1) -
+			sinCosSeries(true, ssig1, csig1, Ca, nC3 - 1)
 		let domg12 = -flattening * a3f(eps) * salp0 * (sig12 + B312)
 		let lam12 = eta + domg12
 
@@ -846,7 +984,7 @@ public struct Geodesic: Sendable {
 		}
 		var s12 = 0.0, m12 = 0.0, M12 = 0.0, M21 = 0.0, S12 = 0.0
 
-		/* Compute longitude difference (AngDiff does this carefully).  Result is
+		/* Compute longitude difference (angDiff does this carefully).  Result is
 		 * in [-180, 180] but -180 is only for west-going geodesics.  180 is for
 		 * east-going and meridional geodesics. */
 		var (lon12, lon12s) = angDiff(lon1, lon2)
@@ -1352,7 +1490,7 @@ extension Geodesic {
 		if let flags = flags, !flags.contains(.arcMode) {
 			caps.insert(.distanceIn)
 		}
-		let line = Line(
+		let line = GeodesicLine(
 			geodesic: self,
 			latitude: latitude,
 			longitude: longitude,
@@ -1403,7 +1541,7 @@ extension Geodesic {
 	}
 }
 
-struct Line {
+public struct GeodesicLine {
 	let latitude: Double // lat1
 	let longitude: Double // lon1
 	let azimuth: Double // azi1
@@ -1539,7 +1677,7 @@ struct Line {
  * The struct for accumulating information about a geodesic polygon.  This is
  * used for computing the perimeter and area of a polygon.
  * */
-internal class Polygon {
+public class GeodesicPolygon {
 	var startPoint: Point?
 	var currentPoint: Point?
 
@@ -1860,121 +1998,4 @@ internal class Polygon {
 public struct Point {
 	let latitude: Double
 	let longitude: Double
-}
-
-// MARK: - Series helpers
-
-/// sinCosSeries evaluates a trigonometric series using Clenshaw summation.
-private func sinCosSeries(_ sinp: Bool, _ sinx: Double, _ cosx: Double,
-						  _ c: [Double], _ n: Int) -> Double {
-	guard c.count > 0 else {
-		logger.error("sinCosSeries called with empty coefficient array")
-		return 0
-	}
-	/* Evaluate
-	 * y = sinp ? sum(c[i] * sin( 2*i    * x), i, 1, n) :
-	 *            sum(c[i] * cos((2*i+1) * x), i, 0, n-1)
-	 * using Clenshaw summation.  N.B. c[0] is unused for sin series
-	 * Approx. operation count = (n + 5) multiplications and (2 * n + 2) additions
-	 */
-
-	var idx = n
-	if sinp {
-		idx += 1
-	}
-
-	let ar = 2 * (cosx - sinx) * (cosx + sinx)
-
-	var sum1 = 0.0
-	if (n & 1) != 0 {
-		idx -= 1
-		sum1 = c[idx]
-	}
-	var sum2 = 0.0
-
-	var nn = n / 2
-	while nn > 0 {
-		nn -= 1
-		idx -= 1
-		sum2 = ar * sum1 - sum2 + c[idx]
-
-		idx -= 1
-		sum1 = ar * sum2 - sum1 + c[idx]
-	}
-
-	return sinp ? 2 * sinx * cosx * sum1 : cosx * (sum1 - sum2)
-}
-
-private func a1m1f(_ eps: Double) -> Double {
-	let coeff: [Double] = [1, 4, 64, 0, 256]
-	let m = nA1 / 2
-	let t = polyval(m, coeff, 0, sq(eps)) / coeff[m + 1]
-	return (t + eps) / (1 - eps)
-}
-
-private func c1f(_ eps: Double, _ c: inout [Double]) {
-	let coeff: [Double] = [
-		-1, 6, -16, 32,
-		 -9, 64, -128, 2048,
-		 9, -16, 768,
-		 3, -5, 512,
-		 -7, 1280,
-		 -7, 2048,
-	]
-	let eps2 = sq(eps)
-	var d = eps
-	var o = 0
-	for l in 1...nC1 {
-		let m = (nC1 - l) / 2
-		c[l] = d * polyval(m, coeff, o, eps2) / coeff[o + m + 1]
-		o += m + 2
-		d *= eps
-	}
-}
-
-private func c1pf(_ eps: Double, _ c: inout [Double]) {
-	let coeff: [Double] = [
-		205, -432, 768, 1536,
-		4005, -4736, 3840, 12288,
-		-225, 116, 384,
-		-7173, 2695, 7680,
-		3467, 7680,
-		38081, 61440,
-	]
-	let eps2 = sq(eps)
-	var d = eps
-	var o = 0
-	for l in 1...nC1p {
-		let m = (nC1p - l) / 2
-		c[l] = d * polyval(m, coeff, o, eps2) / coeff[o + m + 1]
-		o += m + 2
-		d *= eps
-	}
-}
-
-private func a2m1f(_ eps: Double) -> Double {
-	let coeff: [Double] = [-11, -28, -192, 0, 256]
-	let m = nA2 / 2
-	let t = polyval(m, coeff, 0, sq(eps)) / coeff[m + 1]
-	return (t - eps) / (1 + eps)
-}
-
-private func c2f(_ eps: Double, _ c: inout [Double]) {
-	let coeff: [Double] = [
-		1, 2, 16, 32,
-		35, 64, 384, 2048,
-		15, 80, 768,
-		7, 35, 512,
-		63, 1280,
-		77, 2048,
-	]
-	let eps2 = sq(eps)
-	var d = eps
-	var o = 0
-	for l in 1...nC2 {
-		let m = (nC2 - l) / 2
-		c[l] = d * polyval(m, coeff, o, eps2) / coeff[o + m + 1]
-		o += m + 2
-		d *= eps
-	}
 }
