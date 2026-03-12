@@ -1689,13 +1689,13 @@ public class GeodesicPolygon {
 
 	var pointCount: UInt = 0
 
-	init(isPolyline: Bool) {
+	public init(isPolyline: Bool) {
 		self.isPolyline = isPolyline
 		self.area = [0, 0]
 		self.perimeter = [0, 0]
 	}
 
-	init(isPolyline: Bool, points: [Point], geodesic: Geodesic) {
+	public init(isPolyline: Bool, points: [Point], geodesic: Geodesic) {
 		self.isPolyline = isPolyline
 		self.area = [0, 0]
 		self.perimeter = [0, 0]
@@ -1817,7 +1817,7 @@ public class GeodesicPolygon {
 		return 0 + area
 	}
 
-	func addPoint(geod: Geodesic, point: Point) {
+	public func addPoint(geod: Geodesic, point: Point) {
 		if let currentPoint = currentPoint {
 			let inverse = geod.generalInverse(
 				latitude1: currentPoint.latitude,
@@ -1845,7 +1845,7 @@ public class GeodesicPolygon {
 		pointCount += 1
 	}
 
-	func testPoint(geod: Geodesic, point: Point, reverse: Bool, sign: Bool) -> (area: Double, perimeter: Double) {
+	public func testPoint(geod: Geodesic, point: Point, reverse: Bool, sign: Bool) -> (area: Double, perimeter: Double) {
 		guard let startPoint = startPoint, let currentPoint = currentPoint else {
 			return (0, 0)
 		}
@@ -1889,7 +1889,7 @@ public class GeodesicPolygon {
 		return (area, perimeter)
 	}
 
-	func addEdge(geod: Geodesic, azimuth: Double, distance: Double) {
+	public func addEdge(geod: Geodesic, azimuth: Double, distance: Double) {
 		guard let currentPoint = currentPoint else {
 			logger.warning("Attempted to add an edge to a polygon that does not yet have a starting point")
 			return
@@ -1914,7 +1914,7 @@ public class GeodesicPolygon {
 		self.pointCount += 1
 	}
 
-	func testEdge(geod: Geodesic, azimuth: Double, distance: Double, reverse: Bool, sign: Bool) -> (area: Double, perimeter: Double) {
+	public func testEdge(geod: Geodesic, azimuth: Double, distance: Double, reverse: Bool, sign: Bool) -> (area: Double, perimeter: Double) {
 		guard let startPoint = startPoint, let currentPoint = currentPoint else {
 			return (.nan, .nan)
 		}
@@ -1961,7 +1961,7 @@ public class GeodesicPolygon {
 		return (area, perimeter)
 	}
 
-	func compute(geod: Geodesic, reverse: Bool, sign: Bool) -> (area: Double, perimeter: Double) {
+	public func compute(geod: Geodesic, reverse: Bool, sign: Bool) -> (area: Double, perimeter: Double) {
 		guard self.pointCount >= 2, let startPoint = startPoint, let currentPoint = currentPoint else {
 			return (0, 0)
 		}

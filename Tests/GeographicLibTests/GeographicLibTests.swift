@@ -654,12 +654,12 @@ struct GeodesicTests {
 	}
 
 
-	func planimeter(_ geod: Geodesic, points: [Point]) -> (area: Double, perimeter: Double) {
+	func planimeter(_ geod: Geodesic, points: [GeodPoint]) -> (area: Double, perimeter: Double) {
 		let polygon = GeodesicPolygon(isPolyline: false, points: points, geodesic: geod)
 		return polygon.compute(geod: geod, reverse: false, sign: true)
 	}
 
-	func polylength(_ geod: Geodesic, points: [Point]) -> Double {
+	func polylength(_ geod: Geodesic, points: [GeodPoint]) -> Double {
 		let polygon = GeodesicPolygon(isPolyline: true, points: points, geodesic: geod)
 		return polygon.compute(geod: geod, reverse: false, sign: true).perimeter
 	}
@@ -901,17 +901,17 @@ struct GeodesicTests {
 	@Test
 	func testPlanimeter0() {
 		/* Check fix for pole-encircling bug found 2011-03-16 */
-		let pointsA: [Point] = [
-			Point(latitude: 89, longitude: 0), Point(latitude: 89, longitude: 90), Point(latitude: 89, longitude: 180), Point(latitude: 89, longitude: 270)
+		let pointsA: [GeodPoint] = [
+			GeodPoint(latitude: 89, longitude: 0), GeodPoint(latitude: 89, longitude: 90), GeodPoint(latitude: 89, longitude: 180), GeodPoint(latitude: 89, longitude: 270)
 		]
-		let pointsB: [Point] = [
-			Point(latitude: -89, longitude: 0), Point(latitude: -89, longitude: 90), Point(latitude: -89, longitude: 180), Point(latitude: -89, longitude: 270)
+		let pointsB: [GeodPoint] = [
+			GeodPoint(latitude: -89, longitude: 0), GeodPoint(latitude: -89, longitude: 90), GeodPoint(latitude: -89, longitude: 180), GeodPoint(latitude: -89, longitude: 270)
 		]
-		let pointsC: [Point] = [
-			Point(latitude: 0, longitude: -1), Point(latitude: -1, longitude: 0), Point(latitude: 0, longitude: 1), Point(latitude: 1, longitude: 0)
+		let pointsC: [GeodPoint] = [
+			GeodPoint(latitude: 0, longitude: -1), GeodPoint(latitude: -1, longitude: 0), GeodPoint(latitude: 0, longitude: 1), GeodPoint(latitude: 1, longitude: 0)
 		]
-		let pointsD: [Point] = [
-			Point(latitude: 90, longitude: 0), Point(latitude: 0, longitude: 0), Point(latitude: 0, longitude: 90)
+		let pointsD: [GeodPoint] = [
+			GeodPoint(latitude: 90, longitude: 0), GeodPoint(latitude: 0, longitude: 0), GeodPoint(latitude: 0, longitude: 90)
 		]
 
 		let geod = Geodesic.WGS84
@@ -938,7 +938,7 @@ struct GeodesicTests {
 	@Test
 	func testPlanimeter5() {
 		/* Check fix for Planimeter pole crossing bug found 2011-06-24 */
-		let points = [Point(latitude: 89, longitude: 0.1), Point(latitude: 89, longitude: 90.1), Point(latitude: 89, longitude: -179.9)]
+		let points = [GeodPoint(latitude: 89, longitude: 0.1), GeodPoint(latitude: 89, longitude: 90.1), GeodPoint(latitude: 89, longitude: -179.9)]
 		let geod = Geodesic.WGS84
 		let result = planimeter(geod, points: points)
 		#expect(isEqual(result.perimeter, 539297, precision: 1))
@@ -949,24 +949,24 @@ struct GeodesicTests {
 	func testPlanimeter6() {
 		/* Check fix for Planimeter lon12 rounding bug found 2012-12-03 */
 		let pointsA = [
-			Point(latitude: 9, longitude: -0.00000000000001),
-			Point(latitude: 9, longitude: 180),
-			Point(latitude: 9, longitude: 0)
+			GeodPoint(latitude: 9, longitude: -0.00000000000001),
+			GeodPoint(latitude: 9, longitude: 180),
+			GeodPoint(latitude: 9, longitude: 0)
 		]
 		let pointsB = [
-			Point(latitude: 9, longitude: 0.00000000000001),
-			Point(latitude: 9, longitude: 0),
-			Point(latitude: 9, longitude: 180)
+			GeodPoint(latitude: 9, longitude: 0.00000000000001),
+			GeodPoint(latitude: 9, longitude: 0),
+			GeodPoint(latitude: 9, longitude: 180)
 		]
 		let pointsC = [
-			Point(latitude: 9, longitude: 0.00000000000001),
-			Point(latitude: 9, longitude: 180),
-			Point(latitude: 9, longitude: 0)
+			GeodPoint(latitude: 9, longitude: 0.00000000000001),
+			GeodPoint(latitude: 9, longitude: 180),
+			GeodPoint(latitude: 9, longitude: 0)
 		]
 		let pointsD = [
-			Point(latitude: 9, longitude: -0.00000000000001),
-			Point(latitude: 9, longitude: 0),
-			Point(latitude: 9, longitude: 180)
+			GeodPoint(latitude: 9, longitude: -0.00000000000001),
+			GeodPoint(latitude: 9, longitude: 0),
+			GeodPoint(latitude: 9, longitude: 180)
 		]
 
 		let geod = Geodesic.WGS84
@@ -991,9 +991,9 @@ struct GeodesicTests {
 	func testPlanimeter12() {
 		/* Area of arctic circle (not really -- adjunct to rhumb-area test) */
 		let points = [
-			Point(latitude: 66.562222222, longitude: 0),
-			Point(latitude: 66.562222222, longitude: 180),
-			Point(latitude: 66.562222222, longitude: 360)
+			GeodPoint(latitude: 66.562222222, longitude: 0),
+			GeodPoint(latitude: 66.562222222, longitude: 180),
+			GeodPoint(latitude: 66.562222222, longitude: 360)
 		]
 		let geod = Geodesic.WGS84
 		let result = planimeter(geod, points: points)
@@ -1005,9 +1005,9 @@ struct GeodesicTests {
 	func testPlanimeter12r() {
 		/* Area of arctic circle (not really -- adjunct to rhumb-area test) */
 		let points = [
-			Point(latitude: 66.562222222, longitude: -0),
-			Point(latitude: 66.562222222, longitude: -180),
-			Point(latitude: 66.562222222, longitude: -360)
+			GeodPoint(latitude: 66.562222222, longitude: -0),
+			GeodPoint(latitude: 66.562222222, longitude: -180),
+			GeodPoint(latitude: 66.562222222, longitude: -360)
 		]
 		let geod = Geodesic.WGS84
 		let result = planimeter(geod, points: points)
@@ -1019,12 +1019,12 @@ struct GeodesicTests {
 	func testPlanimeter13() {
 		/* Check encircling pole twice */
 		let points = [
-			Point(latitude: 89, longitude: -360),
-			Point(latitude: 89, longitude: -240),
-			Point(latitude: 89, longitude: -120),
-			Point(latitude: 89, longitude: 0),
-			Point(latitude: 89, longitude: 120),
-			Point(latitude: 89, longitude: 240)
+			GeodPoint(latitude: 89, longitude: -360),
+			GeodPoint(latitude: 89, longitude: -240),
+			GeodPoint(latitude: 89, longitude: -120),
+			GeodPoint(latitude: 89, longitude: 0),
+			GeodPoint(latitude: 89, longitude: 120),
+			GeodPoint(latitude: 89, longitude: 240)
 		]
 		let geod = Geodesic.WGS84
 		let result = planimeter(geod, points: points)
@@ -1037,9 +1037,9 @@ struct GeodesicTests {
 		/* Coverage tests, includes Planimeter15 - Planimeter18 (combinations of
 		 * reverse and sign) + calls to testpoint, testedge, geod_polygonarea. */
 		let points = [
-			Point(latitude: 2, longitude: 1),
-			Point(latitude: 1, longitude: 2),
-			Point(latitude: 3, longitude: 3)
+			GeodPoint(latitude: 2, longitude: 1),
+			GeodPoint(latitude: 1, longitude: 2),
+			GeodPoint(latitude: 3, longitude: 3)
 		]
 
 		let r = 18454562325.45119
@@ -1105,7 +1105,7 @@ struct GeodesicTests {
 		#expect(result.area == 0)
 		#expect(result.perimeter == 0)
 
-		result = polygon.testPoint(geod: geod, point: Point(latitude: 1, longitude: 1), reverse: false, sign: true)
+		result = polygon.testPoint(geod: geod, point: GeodPoint(latitude: 1, longitude: 1), reverse: false, sign: true)
 		#expect(result.area == 0)
 		#expect(result.perimeter == 0)
 
@@ -1113,7 +1113,7 @@ struct GeodesicTests {
 		#expect(result.area.isNaN)
 		#expect(result.perimeter.isNaN)
 
-		polygon.addPoint(geod: geod, point: Point(latitude: 1, longitude: 1))
+		polygon.addPoint(geod: geod, point: GeodPoint(latitude: 1, longitude: 1))
 		result = polygon.compute(geod: geod, reverse: false, sign: true)
 		#expect(result.area == 0)
 		#expect(result.perimeter == 0)
@@ -1122,22 +1122,22 @@ struct GeodesicTests {
 		var polyResult = polylinePolygon.compute(geod: geod, reverse: false, sign: true)
 		#expect(polyResult.perimeter == 0)
 
-		polyResult = polylinePolygon.testPoint(geod: geod, point: Point(latitude: 1, longitude: 1), reverse: false, sign: true)
+		polyResult = polylinePolygon.testPoint(geod: geod, point: GeodPoint(latitude: 1, longitude: 1), reverse: false, sign: true)
 		#expect(polyResult.perimeter == 0)
 
 		polyResult = polylinePolygon.testEdge(geod: geod, azimuth: 90, distance: 1000, reverse: false, sign: true)
 		#expect(polyResult.perimeter.isNaN)
 
-		polylinePolygon.addPoint(geod: geod, point: Point(latitude: 1, longitude: 1))
+		polylinePolygon.addPoint(geod: geod, point: GeodPoint(latitude: 1, longitude: 1))
 		polyResult = polylinePolygon.compute(geod: geod, reverse: false, sign: true)
 		#expect(polyResult.perimeter == 0)
 
-		polylinePolygon.addPoint(geod: geod, point: Point(latitude: 1, longitude: 1))
+		polylinePolygon.addPoint(geod: geod, point: GeodPoint(latitude: 1, longitude: 1))
 
 		polyResult = polylinePolygon.testEdge(geod: geod, azimuth: 90, distance: 1000, reverse: false, sign: true)
 		#expect(isEqual(polyResult.perimeter, 1000, precision: 1e-10))
 
-		polyResult = polylinePolygon.testPoint(geod: geod, point: Point(latitude: 2, longitude: 2), reverse: false, sign: true)
+		polyResult = polylinePolygon.testPoint(geod: geod, point: GeodPoint(latitude: 2, longitude: 2), reverse: false, sign: true)
 		#expect(isEqual(polyResult.perimeter, 156876.149, precision: 0.5e-3))
 	}
 
@@ -1156,24 +1156,24 @@ struct GeodesicTests {
 		let geod = Geodesic.WGS84
 		let polygon = GeodesicPolygon(isPolyline: false)
 
-		polygon.addPoint(geod: geod, point: Point(latitude: lat, longitude: 60))
-		polygon.addPoint(geod: geod, point: Point(latitude: lat, longitude: 180))
-		polygon.addPoint(geod: geod, point: Point(latitude: lat, longitude: -60))
-		polygon.addPoint(geod: geod, point: Point(latitude: lat, longitude: 60))
-		polygon.addPoint(geod: geod, point: Point(latitude: lat, longitude: 180))
-		polygon.addPoint(geod: geod, point: Point(latitude: lat, longitude: -60))
+		polygon.addPoint(geod: geod, point: GeodPoint(latitude: lat, longitude: 60))
+		polygon.addPoint(geod: geod, point: GeodPoint(latitude: lat, longitude: 180))
+		polygon.addPoint(geod: geod, point: GeodPoint(latitude: lat, longitude: -60))
+		polygon.addPoint(geod: geod, point: GeodPoint(latitude: lat, longitude: 60))
+		polygon.addPoint(geod: geod, point: GeodPoint(latitude: lat, longitude: 180))
+		polygon.addPoint(geod: geod, point: GeodPoint(latitude: lat, longitude: -60))
 
 		var result: (area: Double, perimeter: Double)
 		for i in 3...4 {
-			polygon.addPoint(geod: geod, point: Point(latitude: lat, longitude: 60))
-			polygon.addPoint(geod: geod, point: Point(latitude: lat, longitude: 180))
-			result = polygon.testPoint(geod: geod, point: Point(latitude: lat, longitude: -60), reverse: false, sign: true)
+			polygon.addPoint(geod: geod, point: GeodPoint(latitude: lat, longitude: 60))
+			polygon.addPoint(geod: geod, point: GeodPoint(latitude: lat, longitude: 180))
+			result = polygon.testPoint(geod: geod, point: GeodPoint(latitude: lat, longitude: -60), reverse: false, sign: true)
 			#expect(isEqual(result.area, Double(i) * r, precision: 0.5))
-			result = polygon.testPoint(geod: geod, point: Point(latitude: lat, longitude: -60), reverse: false, sign: false)
+			result = polygon.testPoint(geod: geod, point: GeodPoint(latitude: lat, longitude: -60), reverse: false, sign: false)
 			#expect(isEqual(result.area, Double(i) * r, precision: 0.5))
-			result = polygon.testPoint(geod: geod, point: Point(latitude: lat, longitude: -60), reverse: true, sign: true)
+			result = polygon.testPoint(geod: geod, point: GeodPoint(latitude: lat, longitude: -60), reverse: true, sign: true)
 			#expect(isEqual(result.area, -Double(i) * r, precision: 0.5))
-			result = polygon.testPoint(geod: geod, point: Point(latitude: lat, longitude: -60), reverse: true, sign: false)
+			result = polygon.testPoint(geod: geod, point: GeodPoint(latitude: lat, longitude: -60), reverse: true, sign: false)
 			#expect(isEqual(result.area, -Double(i) * r + a0, precision: 0.5))
 
 			result = polygon.testEdge(geod: geod, azimuth: a, distance: s, reverse: false, sign: true)
@@ -1185,7 +1185,7 @@ struct GeodesicTests {
 			result = polygon.testEdge(geod: geod, azimuth:a, distance: s, reverse: true, sign: false)
 			#expect(isEqual(result.area, -Double(i) * r + a0, precision: 0.5))
 
-			polygon.addPoint(geod: geod, point: Point(latitude: lat, longitude: -60))
+			polygon.addPoint(geod: geod, point: GeodPoint(latitude: lat, longitude: -60))
 
 			result = polygon.compute(geod: geod, reverse: false, sign: true)
 			#expect(isEqual(result.area, Double(i) * r, precision: 0.5))
@@ -1203,7 +1203,7 @@ struct GeodesicTests {
 		/* Check fix to transitdirect vs transit zero handling inconsistency */
 		let geod = Geodesic.WGS84
 		let polygon = GeodesicPolygon(isPolyline: false)
-		polygon.addPoint(geod: geod, point: Point(latitude: 0, longitude: 0))
+		polygon.addPoint(geod: geod, point: GeodPoint(latitude: 0, longitude: 0))
 		polygon.addEdge(geod: geod, azimuth: 90, distance: 1000)
 		polygon.addEdge(geod: geod, azimuth: 0, distance: 1000)
 		polygon.addEdge(geod: geod, azimuth: -90, distance: 1000)
